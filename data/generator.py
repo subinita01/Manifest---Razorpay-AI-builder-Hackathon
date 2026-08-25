@@ -50,6 +50,26 @@ LEGACY_TO_NEW_CODE = {
     "194A": "1034",
 }
 
+# Independent restatement of config/tds_rates.yaml's placeholder schedule.
+# Rate depends on the code AND whether the vendor has a PAN on file -- using
+# a single flat rate here would make Stage 4's per-code rate check false-
+# positive on every "correct" TDS row for a code whose contracted rate isn't
+# that flat value.
+RATE_WITH_PAN = {
+    "1023": Decimal("0.01"),
+    "1026": Decimal("0.10"),
+    "1028": Decimal("0.10"),
+    "1031": Decimal("0.05"),
+    "1034": Decimal("0.10"),
+}
+RATE_WITHOUT_PAN = {code: Decimal("0.20") for code in RATE_WITH_PAN}
+
+
+def _tds_rate_for(new_code: str, has_pan: bool) -> Decimal:
+    table = RATE_WITH_PAN if has_pan else RATE_WITHOUT_PAN
+    return table[new_code]
+
+
 METHODS = ["UPI", "NEFT", "RTGS", "CARD"]
 CARD_NETWORKS = ["VISA", "MASTERCARD", "RUPAY"]
 
@@ -135,7 +155,7 @@ def _chunk_into_batches(state: GeneratorState) -> list[list[Order]]:
     return batches
 
 
-def _tds_fields_for_order(state: GeneratorState, order: Order) -> dict[str, Any]:
+def _tds_fields_for_order(state: GeneratorState, order: Order, has_pan: bool) -> dict[str, Any]:
     """Return the *correct* TDS fields for an order, before any defect is planted."""
     if state.rng.random() >= 0.30:
         return {
@@ -145,7 +165,7 @@ def _tds_fields_for_order(state: GeneratorState, order: Order) -> dict[str, Any]
         }
     legacy = state.rng.choice(list(LEGACY_TO_NEW_CODE))
     new_code = LEGACY_TO_NEW_CODE[legacy]
-    rate = Decimal("0.10")
+    rate = _tds_rate_for(new_code, has_pan)
     tds_amount = _q(order.amount * rate)
     if order.created_at >= TDS_CUTOVER:
         return {
@@ -164,7 +184,8 @@ def _tds_fields_for_order(state: GeneratorState, order: Order) -> dict[str, Any]
 
 def _build_ledger(state: GeneratorState) -> None:
     for idx, order in enumerate(state.orders):
-        tds = _tds_fields_for_order(state, order)
+        has_pan = idx % 3 != 0
+        tds = _tds_fields_for_order(state, order, has_pan)
         tds.pop("_legacy_for_defects", None)
         state.ledger_rows.append(
             {
@@ -175,7 +196,7 @@ def _build_ledger(state: GeneratorState) -> None:
                 "tds_code_new": tds["tds_code_new"],
                 "tds_amount": tds["tds_amount"],
                 "gst_rate": Decimal("18.00"),
-                "vendor_pan_masked": f"ABCP{1000 + idx}Z" if idx % 3 else "PANNOTAVAIL",
+                "vendor_pan_masked": f"ABCP{1000 + idx}Z" if has_pan else "PANNOTAVAIL",
                 "posted_at": datetime.combine(order.created_at, datetime.min.time()).isoformat(),
             }
         )
@@ -194,7 +215,8 @@ def _plant_tds_defects(state: GeneratorState) -> None:
     rng_sample = state.rng.sample(candidates, k=min(8, len(candidates)))
     for row in rng_sample:
         legacy = state.rng.choice(list(LEGACY_TO_NEW_CODE))
-        rate = Decimal("0.10")
+        has_pan = row["vendor_pan_masked"] != "PANNOTAVAIL"
+        rate = _tds_rate_for(LEGACY_TO_NEW_CODE[legacy], has_pan)
         gross = row["gross_amount"]
         row["tds_section_legacy"] = legacy
         row["tds_code_new"] = None
@@ -219,7 +241,8 @@ def _plant_tds_defects(state: GeneratorState) -> None:
         wrong_code = state.rng.choice(
             [c for c in LEGACY_TO_NEW_CODE.values() if c != correct_new_code]
         )
-        rate = Decimal("0.10")
+        has_pan = row["vendor_pan_masked"] != "PANNOTAVAIL"
+        rate = _tds_rate_for(correct_new_code, has_pan)
         gross = row["gross_amount"]
         row["tds_section_legacy"] = legacy
         row["tds_code_new"] = wrong_code

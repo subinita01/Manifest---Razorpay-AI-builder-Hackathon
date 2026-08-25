@@ -18,6 +18,10 @@ class StageResult:
     matched: list[MatchResult] = field(default_factory=list)
     residue_bank: list[Any] = field(default_factory=list)
     residue_settlement: list[Any] = field(default_factory=list)
+    # Populated only by stages that consume ledger rows (e.g. stage3_order).
+    # Left empty by stages that don't touch the ledger, same as residue_bank
+    # is left empty by stages that don't touch bank rows.
+    residue_ledger: list[Any] = field(default_factory=list)
     ambiguous: list[dict[str, Any]] = field(default_factory=list)
     stage_name: str = ""
     elapsed_ms: float = 0.0

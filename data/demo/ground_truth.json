@@ -645,7 +645,7 @@
   "n_orders": 600,
   "planted_exceptions": [
     {
-      "amount_impact": "1519.61",
+      "amount_impact": "3039.21",
       "detail": "posted after cutover with legacy section only, no new code",
       "id": "tds_migration_break_ord_00312",
       "order_ids": [
@@ -654,7 +654,7 @@
       "true_label": "TDS_CODE_MIGRATION_BREAK"
     },
     {
-      "amount_impact": "1497.53",
+      "amount_impact": "149.75",
       "detail": "posted after cutover with legacy section only, no new code",
       "id": "tds_migration_break_ord_00534",
       "order_ids": [
@@ -663,7 +663,7 @@
       "true_label": "TDS_CODE_MIGRATION_BREAK"
     },
     {
-      "amount_impact": "4487.08",
+      "amount_impact": "8974.15",
       "detail": "posted after cutover with legacy section only, no new code",
       "id": "tds_migration_break_ord_00117",
       "order_ids": [
@@ -690,7 +690,7 @@
       "true_label": "TDS_CODE_MIGRATION_BREAK"
     },
     {
-      "amount_impact": "1473.47",
+      "amount_impact": "2946.95",
       "detail": "posted after cutover with legacy section only, no new code",
       "id": "tds_migration_break_ord_00174",
       "order_ids": [
@@ -708,7 +708,7 @@
       "true_label": "TDS_CODE_MIGRATION_BREAK"
     },
     {
-      "amount_impact": "4373.28",
+      "amount_impact": "8746.57",
       "detail": "posted after cutover with legacy section only, no new code",
       "id": "tds_migration_break_ord_00592",
       "order_ids": [
@@ -717,7 +717,7 @@
       "true_label": "TDS_CODE_MIGRATION_BREAK"
     },
     {
-      "amount_impact": "1829.39",
+      "amount_impact": "3658.78",
       "detail": "legacy 194H maps to 1031 but row carries 1023",
       "id": "tds_contradiction_ord_00251",
       "order_ids": [
@@ -726,7 +726,7 @@
       "true_label": "TDS_CODE_MIGRATION_BREAK"
     },
     {
-      "amount_impact": "880.65",
+      "amount_impact": "1761.31",
       "detail": "legacy 194I maps to 1028 but row carries 1026",
       "id": "tds_contradiction_ord_00419",
       "order_ids": [
@@ -735,7 +735,7 @@
       "true_label": "TDS_CODE_MIGRATION_BREAK"
     },
     {
-      "amount_impact": "4546.75",
+      "amount_impact": "9093.49",
       "detail": "legacy 194A maps to 1034 but row carries 1026",
       "id": "tds_contradiction_ord_00591",
       "order_ids": [
