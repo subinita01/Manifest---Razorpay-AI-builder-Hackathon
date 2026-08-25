@@ -6,7 +6,7 @@ PYTHON_BIN := $(shell command -v python3.11 2>/dev/null || command -v python3.12
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: install test lint demo-data demo eval clean
+.PHONY: install test lint audit demo-data demo eval clean
 
 $(PYTHON):
 	@if [ -z "$(PYTHON_BIN)" ]; then \
@@ -28,6 +28,9 @@ test:
 lint:
 	$(PYTHON) -m ruff check .
 	$(PYTHON) -m black --check .
+
+audit:
+	$(PYTHON) -m pip_audit
 
 demo-data:
 	$(PYTHON) -m data.generator --seed 42 --orders 600 --out data/demo/

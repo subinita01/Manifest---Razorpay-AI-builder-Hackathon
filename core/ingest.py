@@ -12,17 +12,22 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from core.normalize import parse_date, parse_money
+from core.normalize import parse_date, parse_money, sanitize_cell
 
 
 def load_bank_csv(path: Path) -> list[dict[str, Any]]:
+    """narration is sanitized against CSV formula injection on the way in
+    (core/normalize.sanitize_cell), per SECURITY.md T-CSV -- a malicious
+    payload never reaches core/ unescaped, whether or not it's later
+    exported. It's a no-op for real narration text, which never starts
+    with =, +, -, @, tab, or CR."""
     rows = []
     with path.open() as f:
         for i, r in enumerate(csv.DictReader(f)):
             rows.append(
                 {
                     "row_id": i,
-                    "narration": r["narration"],
+                    "narration": sanitize_cell(r["narration"]),
                     "credit": parse_money(r["credit"]),
                     "txn_date": parse_date(r["txn_date"]),
                     "ref_no": r.get("ref_no") or None,

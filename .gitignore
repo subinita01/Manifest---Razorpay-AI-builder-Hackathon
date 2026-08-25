@@ -13,3 +13,6 @@ __pycache__/
 /uploads/
 /data/generated/
 /streamlit_cache/
+*.duckdb
+*.duckdb.wal
+/data/audit.jsonl
