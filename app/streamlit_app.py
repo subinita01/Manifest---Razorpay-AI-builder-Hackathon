@@ -1,7 +1,7 @@
 import streamlit as st
 
 from backend.services.reconcile_service import ReconcileService
-from core.evaluation import build_ablation_table, evaluate_run, load_ground_truth
+from evaluation.legacy_placeholder import build_ablation_table, evaluate_run, load_ground_truth
 
 st.set_page_config(page_title="MANIFEST", page_icon="📘", layout="wide")
 st.title("MANIFEST")

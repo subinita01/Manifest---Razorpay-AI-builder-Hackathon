@@ -14,7 +14,7 @@ from backend.schemas import (
 )
 from backend.services.reconcile_service import ReconcileService
 from core.audit import AuditLogger
-from core.evaluation import build_ablation_table, calculate_match_rate
+from evaluation.legacy_placeholder import build_ablation_table, calculate_match_rate
 
 router = APIRouter()
 service = ReconcileService()
