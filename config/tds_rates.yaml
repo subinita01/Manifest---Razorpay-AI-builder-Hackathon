@@ -1,0 +1,34 @@
+# PLACEHOLDER VALUES — pending confirmation against the official CBDT
+# notification. Rates map new_code -> {rate_with_pan, rate_without_pan,
+# threshold}. Edit this file to correct a rate; never hardcode one in code.
+
+rates:
+  "1023":
+    rate_with_pan: "0.01"
+    rate_without_pan: "0.20"
+    threshold: "30000.00"
+    verified: false
+
+  "1026":
+    rate_with_pan: "0.10"
+    rate_without_pan: "0.20"
+    threshold: "30000.00"
+    verified: false
+
+  "1028":
+    rate_with_pan: "0.10"
+    rate_without_pan: "0.20"
+    threshold: "240000.00"
+    verified: false
+
+  "1031":
+    rate_with_pan: "0.05"
+    rate_without_pan: "0.20"
+    threshold: "15000.00"
+    verified: false
+
+  "1034":
+    rate_with_pan: "0.10"
+    rate_without_pan: "0.20"
+    threshold: "5000.00"
+    verified: false

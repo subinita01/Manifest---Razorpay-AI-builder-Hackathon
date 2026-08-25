@@ -1,0 +1,17 @@
+# Runtime-tunable settings. Nothing here should be hardcoded in Python.
+
+fuzzy_match:
+  auto_match_threshold: 0.90
+  needs_review_threshold: 0.70
+  ambiguity_margin: 0.05
+
+bridge:
+  mdr_rate: "0.02"
+  gst_on_mdr_rate: "0.18"
+
+upload:
+  max_file_size_mb: 10
+  max_rows: 100000
+
+rate_limit:
+  reconcile_per_minute: 10

@@ -1,0 +1,40 @@
+# PLACEHOLDER VALUES — pending confirmation against the official CBDT
+# notification for the Income Tax Act 2025 numeric payment code schedule
+# (effective 2026-04-01). Every entry below has `verified: false`.
+#
+# This file is the single source of truth for legacy-section -> new-code
+# mapping. Corrections require no code change: edit this file only.
+#
+# core/config.py loads and validates this file; never hardcode a mapping
+# in Python.
+
+entries:
+  - legacy_section: "194C"
+    new_code: "1023"
+    description: "Payments to contractors"
+    effective_from: "2026-04-01"
+    verified: false
+
+  - legacy_section: "194J"
+    new_code: "1026"
+    description: "Fees for professional or technical services"
+    effective_from: "2026-04-01"
+    verified: false
+
+  - legacy_section: "194I"
+    new_code: "1028"
+    description: "Rent"
+    effective_from: "2026-04-01"
+    verified: false
+
+  - legacy_section: "194H"
+    new_code: "1031"
+    description: "Commission or brokerage"
+    effective_from: "2026-04-01"
+    verified: false
+
+  - legacy_section: "194A"
+    new_code: "1034"
+    description: "Interest other than interest on securities"
+    effective_from: "2026-04-01"
+    verified: false
