@@ -8,6 +8,7 @@ without running anything themselves.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from core.ingest import load_bank_csv, load_ledger_csv, load_settlement_csv
@@ -63,8 +64,11 @@ def run_cumulative_ablation() -> str:
         "|---|---|---|---|---|---|---|---|",
     ]
 
+    stage5_result = None
     for name, kwargs in CUMULATIVE_CONFIGS:
         result = run_pipeline(bank_rows, settlement_rows, ledger_rows, **kwargs)
+        if name == "+ stage5 fuzzy":
+            stage5_result = result
         report = evaluate_run(
             result, ground_truth, len(bank_rows), bank_credit_by_row, settlement_utr_by_id
         )
@@ -80,11 +84,63 @@ def run_cumulative_ablation() -> str:
             f"{'holds' if invariant_ok else 'VIOLATED'} |"
         )
 
-    lines.append("")
+    # Row 6: + LLM advisory. Deferred imports so the ablation module (and
+    # every row above it) never needs llm/ to be importable at all.
+    from llm.adapter import build_adapter
+    from llm.enrich import enrich_run_result
+
+    llm_bank_rows, llm_settlement_rows, llm_ledger_rows = (
+        load_bank_csv(DEMO_DIR / "bank_statement.csv"),
+        load_settlement_csv(DEMO_DIR / "settlement_batch.csv"),
+        load_ledger_csv(DEMO_DIR / "internal_ledger.csv"),
+    )
+    llm_result = run_pipeline(llm_bank_rows, llm_settlement_rows, llm_ledger_rows)
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    adapter = build_adapter(api_key=api_key)
+    narration_by_row = {r["row_id"]: r["narration"] for r in llm_bank_rows}
+    enrich_run_result(llm_result, adapter, narration_by_row)
+    llm_report = evaluate_run(
+        llm_result, ground_truth, len(llm_bank_rows), bank_credit_by_row, settlement_utr_by_id
+    )
+    llm_invariant_ok = (
+        llm_result.matched_row_count
+        + llm_result.needs_review_row_count
+        + llm_result.exception_row_count
+        == llm_result.total_input_rows
+    )
+    llm_unexplained_count = sum(
+        1 for e in llm_result.exceptions if e.taxonomy_code == "UNEXPLAINED"
+    )
     lines.append(
-        "LLM advisory is not yet implemented (Day 9), so a 6th row cannot be produced "
-        "honestly; adding a row with no real number behind it would be exactly the "
-        "kind of unearned claim this project's evaluation exists to prevent."
+        f"| + llm advisory | {llm_report.auto_match_rate:.1%} | "
+        f"{llm_report.matcher_precision:.3f} | {llm_report.matcher_recall:.3f} | "
+        f"Rs {llm_report.false_positive_cost_inr:,.2f} | {len(llm_result.exceptions)} | "
+        f"{llm_unexplained_count} | {'holds' if llm_invariant_ok else 'VIOLATED'} |"
+    )
+
+    lines.append("")
+    same_as_stage5 = (
+        stage5_result is not None
+        and llm_result.matched_row_count == stage5_result.matched_row_count
+        and llm_result.needs_review_row_count == stage5_result.needs_review_row_count
+        and llm_result.exception_row_count == stage5_result.exception_row_count
+    )
+    key_note = (
+        "a real API key was present"
+        if api_key
+        else "no ANTHROPIC_API_KEY was set, so this used the deterministic NullAdapter fallback"
+    )
+    comparison_note = "identical to" if same_as_stage5 else "DIFFERENT FROM"
+    lines.append(
+        f"LLM advisory ran with model_string={adapter.model_string!r} ({key_note}). "
+        f"Every core metric in this row is {comparison_note} the '+ stage5 fuzzy' row "
+        "above -- and by design it always will be, however this row is "
+        "regenerated: the LLM layer can only append advisory annotations to "
+        "an exception's detail, never alter which stage matched what (see "
+        "tests/test_prompt_injection.py, which proves this even against an "
+        "adversarial adapter). The uplift this row reports is exactly zero, "
+        "and that's the honest, correct number to report, not a null result "
+        "to paper over."
     )
     lines.append("")
     return "\n".join(lines)

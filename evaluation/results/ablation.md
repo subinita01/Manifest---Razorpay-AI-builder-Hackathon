@@ -17,5 +17,6 @@ possible once Stage 3 has actually checked the ledger side.
 | + stage3 order | 45.7% | 1.000 | 0.533 | Rs 0.00 | 33 | 0 | holds |
 | + stage4 tds | 45.7% | 1.000 | 0.533 | Rs 0.00 | 48 | 0 | holds |
 | + stage5 fuzzy | 62.9% | 1.000 | 0.733 | Rs 0.00 | 45 | 3 | holds |
+| + llm advisory | 62.9% | 1.000 | 0.733 | Rs 0.00 | 45 | 3 | holds |
 
-LLM advisory is not yet implemented (Day 9), so a 6th row cannot be produced honestly; adding a row with no real number behind it would be exactly the kind of unearned claim this project's evaluation exists to prevent.
+LLM advisory ran with model_string='none' (no ANTHROPIC_API_KEY was set, so this used the deterministic NullAdapter fallback). Every core metric in this row is identical to the '+ stage5 fuzzy' row above -- and by design it always will be, however this row is regenerated: the LLM layer can only append advisory annotations to an exception's detail, never alter which stage matched what (see tests/test_prompt_injection.py, which proves this even against an adversarial adapter). The uplift this row reports is exactly zero, and that's the honest, correct number to report, not a null result to paper over.

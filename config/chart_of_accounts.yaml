@@ -1,0 +1,14 @@
+# Chart-of-accounts stub for LLM-drafted adjustment entries. An LLM must
+# only ever propose an account from this list (see llm/prompts.py's
+# adjustment_draft_prompt); a draft naming any other account is rejected
+# at the schema/validation layer before it ever reaches a human reviewer.
+
+accounts:
+  - SUSPENSE_ACCOUNT
+  - MDR_EXPENSE
+  - GST_INPUT_CREDIT
+  - TDS_RECEIVABLE
+  - SETTLEMENT_CLEARING
+  - REFUNDS_PAYABLE
+  - CHARGEBACK_RESERVE
+  - UNRECONCILED_BANK_CREDITS

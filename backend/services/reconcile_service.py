@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import uuid
 from decimal import Decimal
 from pathlib import Path
@@ -80,9 +81,24 @@ def reconcile(
         fuzzy_auto_match_threshold=fuzzy_threshold,
     )
 
+    model_string = None
+    if use_llm:
+        # Deferred imports: llm/ is optional weight core.pipeline never
+        # carries, and this is the one place backend/ decides whether to
+        # pay it. Reading an API key from the environment is fine here --
+        # this is backend/, not core/ (CLAUDE.md rule 2 only restricts
+        # core/).
+        from llm.adapter import build_adapter
+        from llm.enrich import enrich_run_result
+
+        adapter = build_adapter(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        model_string = adapter.model_string
+        bank_narration_by_row_id = {row["row_id"]: row["narration"] for row in bank_rows}
+        enrich_run_result(result, adapter, bank_narration_by_row_id)
+
     run_id = uuid.uuid4().hex
     seed = 42 if dataset_id == "demo" else 0
-    manifest = build_run_manifest(run_id, seed=seed)
+    manifest = build_run_manifest(run_id, seed=seed, model_string=model_string)
 
     db.save_run(
         conn,

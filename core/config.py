@@ -65,6 +65,14 @@ def load_settings() -> dict[str, Any]:
         return yaml.safe_load(handle) or {}
 
 
+@functools.lru_cache(maxsize=1)
+def load_chart_of_accounts() -> list[str]:
+    path = CONFIG_DIR / "chart_of_accounts.yaml"
+    with path.open("r", encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+    return list(raw.get("accounts", []))
+
+
 def lookup_new_code(legacy_section: str) -> TDSCodeMapEntry:
     """Return the config entry mapping a legacy section to its new code.
 
