@@ -290,6 +290,13 @@ def _build_settlement_and_bank(state: GeneratorState, batches: list[list[Order]]
         "GST_ON_MDR_VARIANCE": 2,
         "TIMING_T_PLUS_N": 5,
         "ROUNDING": 6,
+        # A residual that is genuinely inexplicable by any rule the cascade
+        # knows about (not a rate issue, not sub-rupee rounding) -- proves
+        # UNEXPLAINED is reachable in practice, not just asserted. Sized to
+        # ~0.2% of the batch net so Stage 5's fuzzy amount tolerance still
+        # picks the bank row up (its floor is 0.5% of net), while staying
+        # well above BRIDGE_TOLERANCE so it can't be swallowed as ROUNDING.
+        "UNEXPLAINED_RESIDUAL": 3,
     }
     total_needed = sum(needed.values())
     if n_batches < total_needed:
@@ -424,15 +431,37 @@ def _build_settlement_and_bank(state: GeneratorState, batches: list[list[Order]]
             drift = Decimal(state.rng.choice([-9, -7, -5, -3, 3, 5, 7, 9])) / Decimal(100)
             bank_credit = _q(bank_credit + drift)
             residual_note = str(abs(drift))
+        elif label == "UNEXPLAINED_RESIDUAL":
+            # ~0.1% of net: small enough that Stage 5's amount_score (whose
+            # tolerance floor is 0.5% of net) stays high enough to clear the
+            # auto-match threshold once combined with an exact date and a
+            # clean narration -- this defect is meant to demonstrate that a
+            # *matched* row can still carry a residual the bridge cannot
+            # explain, not to sit in the fuzzy review queue. Far above
+            # BRIDGE_TOLERANCE so Stage 2 can't explain it as rounding, and
+            # not a multiple of any known MDR/GST rate so the variance
+            # checks don't explain it either.
+            drift = _q(bank_credit * Decimal("0.0005"))
+            if state.rng.random() < 0.5:
+                drift = -drift
+            bank_credit = _q(bank_credit + drift)
+            residual_note = str(abs(drift))
 
         txn_date = settled_at.date()
         if label == "TIMING_T_PLUS_N":
             txn_date = txn_date + timedelta(days=3)
 
         fmt = DATE_FORMATTERS[b_idx % len(DATE_FORMATTERS)]
-        truncate_utr = state.rng.random() < 0.10
-        narration_utr = settlement_utr[:8] if truncate_utr else settlement_utr
-        narration = state.rng.choice(NARRATION_TEMPLATES).format(utr=narration_utr)
+        if label == "UNEXPLAINED_RESIDUAL":
+            # A clean, token-isolated UTR narration scores near-perfectly on
+            # Stage 5's narration_score, matching this defect's intent (a
+            # match the system confidently makes, that still doesn't
+            # reconcile) rather than accidentally testing narration fuzziness.
+            narration = f"SETTLEMENT UTR {settlement_utr}"
+        else:
+            truncate_utr = state.rng.random() < 0.10
+            narration_utr = settlement_utr[:8] if truncate_utr else settlement_utr
+            narration = state.rng.choice(NARRATION_TEMPLATES).format(utr=narration_utr)
 
         state.balance += bank_credit
         bank_row_id = len(state.bank_rows)
@@ -492,6 +521,17 @@ def _build_settlement_and_bank(state: GeneratorState, batches: list[list[Order]]
                     "bank_row_id": bank_row_id,
                     "amount_impact": residual_note,
                     "detail": "sub-rupee residual between bridge and bank credit",
+                }
+            )
+        elif label == "UNEXPLAINED_RESIDUAL":
+            state.planted_exceptions.append(
+                {
+                    "id": f"unexplained_{settlement_utr}",
+                    "true_label": "UNEXPLAINED",
+                    "settlement_ids": settlement_ids_for_batch,
+                    "bank_row_id": bank_row_id,
+                    "amount_impact": residual_note,
+                    "detail": "residual matches no known rate variance or rounding tolerance",
                 }
             )
         else:

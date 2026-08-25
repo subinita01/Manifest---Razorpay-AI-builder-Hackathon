@@ -62,4 +62,7 @@ def test_duplicate_utr_claimed_by_two_bank_rows_is_ambiguous_not_matched():
     result = match_utr(bank, settlement)
     assert result.matched == []
     assert len(result.ambiguous) == 2
-    assert len(result.residue_bank) == 2
+    # Ambiguous rows are excluded from residue_bank: they're accounted for
+    # via `ambiguous`, not left as unexplained residue -- otherwise they'd
+    # be double-counted by anything summing matched + ambiguous + residue.
+    assert result.residue_bank == []

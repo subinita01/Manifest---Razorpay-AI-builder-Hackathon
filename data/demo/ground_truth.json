@@ -1,57 +1,6 @@
 {
   "expected_matches": [
     {
-      "bank_row_id": 0,
-      "order_ids": [
-        "ord_00160",
-        "ord_00476",
-        "ord_00495",
-        "ord_00356",
-        "ord_00386",
-        "ord_00436",
-        "ord_00055",
-        "ord_00222",
-        "ord_00385",
-        "ord_00550",
-        "ord_00585",
-        "ord_00005",
-        "ord_00178",
-        "ord_00331",
-        "ord_00409",
-        "ord_00295",
-        "ord_00353",
-        "ord_00421",
-        "ord_00582",
-        "ord_00127",
-        "ord_00367"
-      ],
-      "settlement_ids": [
-        "setl_0000_000",
-        "setl_0000_001",
-        "setl_0000_002",
-        "setl_0000_003",
-        "setl_0000_004",
-        "setl_0000_005",
-        "setl_0000_005_rf",
-        "setl_0000_006",
-        "setl_0000_007",
-        "setl_0000_008",
-        "setl_0000_009",
-        "setl_0000_010",
-        "setl_0000_011",
-        "setl_0000_012",
-        "setl_0000_013",
-        "setl_0000_014",
-        "setl_0000_015",
-        "setl_0000_016",
-        "setl_0000_017",
-        "setl_0000_018",
-        "setl_0000_019",
-        "setl_0000_020"
-      ],
-      "settlement_utr": "1581995604661839"
-    },
-    {
       "bank_row_id": 2,
       "order_ids": [
         "ord_00200",
@@ -77,7 +26,7 @@
         "setl_0002_008",
         "setl_0002_009"
       ],
-      "settlement_utr": "9379660334191825"
+      "settlement_utr": "6609379660334191"
     },
     {
       "bank_row_id": 3,
@@ -106,6 +55,7 @@
         "setl_0003_001",
         "setl_0003_002",
         "setl_0003_003",
+        "setl_0003_003_rf",
         "setl_0003_004",
         "setl_0003_005",
         "setl_0003_006",
@@ -121,7 +71,7 @@
         "setl_0003_016",
         "setl_0003_017"
       ],
-      "settlement_utr": "4225790507236887"
+      "settlement_utr": "8274225790507236"
     },
     {
       "bank_row_id": 4,
@@ -185,7 +135,7 @@
         "setl_0004_026",
         "setl_0004_026_rf"
       ],
-      "settlement_utr": "1260422325367294"
+      "settlement_utr": "8126042232536729"
     },
     {
       "bank_row_id": 8,
@@ -233,31 +183,6 @@
       "settlement_utr": "6578759856420593"
     },
     {
-      "bank_row_id": 9,
-      "order_ids": [
-        "ord_00489",
-        "ord_00571",
-        "ord_00048",
-        "ord_00259",
-        "ord_00368",
-        "ord_00494",
-        "ord_00170",
-        "ord_00207"
-      ],
-      "settlement_ids": [
-        "setl_0009_000",
-        "setl_0009_001",
-        "setl_0009_002",
-        "setl_0009_003",
-        "setl_0009_003_rf",
-        "setl_0009_004",
-        "setl_0009_005",
-        "setl_0009_006",
-        "setl_0009_007"
-      ],
-      "settlement_utr": "6915452267528953"
-    },
-    {
       "bank_row_id": 10,
       "order_ids": [
         "ord_00272",
@@ -299,6 +224,7 @@
         "setl_0010_006",
         "setl_0010_007",
         "setl_0010_008",
+        "setl_0010_008_rf",
         "setl_0010_009",
         "setl_0010_010",
         "setl_0010_011",
@@ -319,7 +245,7 @@
         "setl_0010_026",
         "setl_0010_027"
       ],
-      "settlement_utr": "7043315410067626"
+      "settlement_utr": "5704331541006762"
     },
     {
       "bank_row_id": 11,
@@ -630,16 +556,6 @@
         "setl_0027_014"
       ],
       "settlement_utr": "0208021442703120"
-    },
-    {
-      "bank_row_id": 29,
-      "order_ids": [
-        "ord_00306"
-      ],
-      "settlement_ids": [
-        "setl_0029_000"
-      ],
-      "settlement_utr": "9576122868528975"
     }
   ],
   "n_orders": 600,
@@ -807,10 +723,41 @@
       "true_label": "LEDGER_ONLY"
     },
     {
-      "amount_impact": "0.07",
+      "amount_impact": "252.07",
+      "bank_row_id": 0,
+      "detail": "residual matches no known rate variance or rounding tolerance",
+      "id": "unexplained_1581995604661839",
+      "settlement_ids": [
+        "setl_0000_000",
+        "setl_0000_001",
+        "setl_0000_002",
+        "setl_0000_003",
+        "setl_0000_004",
+        "setl_0000_005",
+        "setl_0000_005_rf",
+        "setl_0000_006",
+        "setl_0000_007",
+        "setl_0000_008",
+        "setl_0000_009",
+        "setl_0000_010",
+        "setl_0000_011",
+        "setl_0000_012",
+        "setl_0000_013",
+        "setl_0000_014",
+        "setl_0000_015",
+        "setl_0000_016",
+        "setl_0000_017",
+        "setl_0000_018",
+        "setl_0000_019",
+        "setl_0000_020"
+      ],
+      "true_label": "UNEXPLAINED"
+    },
+    {
+      "amount_impact": "0.05",
       "bank_row_id": 1,
       "detail": "sub-rupee residual between bridge and bank credit",
-      "id": "rounding_8680589113529096",
+      "id": "rounding_8868058911352909",
       "settlement_ids": [
         "setl_0001_000",
         "setl_0001_001",
@@ -818,11 +765,13 @@
         "setl_0001_003",
         "setl_0001_004",
         "setl_0001_005",
+        "setl_0001_005_rf",
         "setl_0001_006",
         "setl_0001_007",
         "setl_0001_008",
         "setl_0001_009",
         "setl_0001_010",
+        "setl_0001_010_rf",
         "setl_0001_011",
         "setl_0001_012",
         "setl_0001_013",
@@ -933,6 +882,24 @@
         "setl_0007_019"
       ],
       "true_label": "GST_ON_MDR_VARIANCE"
+    },
+    {
+      "amount_impact": "80.44",
+      "bank_row_id": 9,
+      "detail": "residual matches no known rate variance or rounding tolerance",
+      "id": "unexplained_6915452267528953",
+      "settlement_ids": [
+        "setl_0009_000",
+        "setl_0009_001",
+        "setl_0009_002",
+        "setl_0009_003",
+        "setl_0009_003_rf",
+        "setl_0009_004",
+        "setl_0009_005",
+        "setl_0009_006",
+        "setl_0009_007"
+      ],
+      "true_label": "UNEXPLAINED"
     },
     {
       "amount_impact": "0.00",
@@ -1307,6 +1274,16 @@
         "setl_0028_029"
       ],
       "true_label": "FEE_VARIANCE"
+    },
+    {
+      "amount_impact": "11.39",
+      "bank_row_id": 29,
+      "detail": "residual matches no known rate variance or rounding tolerance",
+      "id": "unexplained_9576122868528975",
+      "settlement_ids": [
+        "setl_0029_000"
+      ],
+      "true_label": "UNEXPLAINED"
     },
     {
       "amount_impact": "1591.50",

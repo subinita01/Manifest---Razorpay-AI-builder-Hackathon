@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import csv
 import sys
-from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -12,45 +10,12 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from core.ingest import load_bank_csv, load_settlement_csv  # noqa: E402
 from core.matching.stage1_utr import match_utr  # noqa: E402
 from core.matching.stage2_bridge import BridgeResult, build_bridge  # noqa: E402
-from core.normalize import parse_date, parse_money  # noqa: E402
 
-
-def load_bank(path: Path) -> list[dict]:
-    rows = []
-    with path.open() as f:
-        for i, r in enumerate(csv.DictReader(f)):
-            rows.append(
-                {
-                    "row_id": i,
-                    "narration": r["narration"],
-                    "credit": parse_money(r["credit"]),
-                    "txn_date": parse_date(r["txn_date"]),
-                }
-            )
-    return rows
-
-
-def load_settlement(path: Path) -> list[dict]:
-    rows = []
-    with path.open() as f:
-        for r in csv.DictReader(f):
-            rows.append(
-                {
-                    "settlement_id": r["settlement_id"],
-                    "settlement_utr": r["settlement_utr"],
-                    "amount": Decimal(r["amount"]),
-                    "fee": Decimal(r["fee"]),
-                    "tax": Decimal(r["tax"]),
-                    "on_hold": r["on_hold"] == "True",
-                    "type": r["type"],
-                    "settled_at": datetime.fromisoformat(r["settled_at"]),
-                    "order_id": r["order_id"],
-                    "dispute_id": r["dispute_id"] or None,
-                }
-            )
-    return rows
+load_bank = load_bank_csv
+load_settlement = load_settlement_csv
 
 
 def format_amount(value: Decimal) -> str:

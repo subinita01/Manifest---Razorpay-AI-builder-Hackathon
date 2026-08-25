@@ -40,6 +40,7 @@ def test_ground_truth_lists_every_planted_defect(tmp_path: Path):
         "BANK_ONLY": 2,
         "LEDGER_ONLY": 3,
         "ROUNDING": 6,
+        "UNEXPLAINED": 3,
     }
     for label, count in expected_counts.items():
         assert labels.count(label) == count, label

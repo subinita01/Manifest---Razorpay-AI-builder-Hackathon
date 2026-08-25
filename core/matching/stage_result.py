@@ -23,5 +23,8 @@ class StageResult:
     # is left empty by stages that don't touch bank rows.
     residue_ledger: list[Any] = field(default_factory=list)
     ambiguous: list[dict[str, Any]] = field(default_factory=list)
+    # A proposal, never a decision. core/pipeline.py must never promote a
+    # needs_review entry to matched on its own -- only a human review can.
+    needs_review: list[MatchResult] = field(default_factory=list)
     stage_name: str = ""
     elapsed_ms: float = 0.0

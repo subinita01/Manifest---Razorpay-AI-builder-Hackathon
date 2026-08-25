@@ -58,6 +58,7 @@ def match_utr(
 
     bank_by_id = {row["row_id"]: row for row in bank_rows}
     matched_bank_ids: set[int] = set()
+    ambiguous_bank_ids: set[int] = set()
     matched_settlement_utrs: set[str] = set()
     result = StageResult(stage_name="stage1_utr")
 
@@ -68,6 +69,7 @@ def match_utr(
 
         if len(row_ids) > 1:
             for row_id in row_ids:
+                ambiguous_bank_ids.add(row_id)
                 result.ambiguous.append(
                     {
                         "reason": "utr_claimed_by_multiple_bank_rows",
@@ -106,7 +108,8 @@ def match_utr(
             matched_bank_ids.add(bank_row["row_id"])
             matched_settlement_utrs.add(utr)
 
-    result.residue_bank = [row for row in bank_rows if row["row_id"] not in matched_bank_ids]
+    excluded_bank_ids = matched_bank_ids | ambiguous_bank_ids
+    result.residue_bank = [row for row in bank_rows if row["row_id"] not in excluded_bank_ids]
     result.residue_settlement = [
         row
         for row in settlement_rows

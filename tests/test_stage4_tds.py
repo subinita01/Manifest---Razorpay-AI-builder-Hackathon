@@ -1,10 +1,10 @@
-import csv
 import json
 from collections import Counter
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+from core.ingest import load_ledger_csv
 from core.matching.stage4_tds import evaluate_tds
 
 DEMO_DIR = Path(__file__).resolve().parent.parent / "data" / "demo"
@@ -92,18 +92,7 @@ def test_rule_e_unknown_code():
 
 
 def _load_ledger_rows():
-    rows = {}
-    with (DEMO_DIR / "internal_ledger.csv").open() as f:
-        for r in csv.DictReader(f):
-            rows[r["order_id"]] = {
-                "gross_amount": Decimal(r["gross_amount"]),
-                "tds_section_legacy": r["tds_section_legacy"] or None,
-                "tds_code_new": r["tds_code_new"] or None,
-                "tds_amount": Decimal(r["tds_amount"]),
-                "vendor_pan_masked": r["vendor_pan_masked"],
-                "posted_at": datetime.fromisoformat(r["posted_at"]),
-            }
-    return rows
+    return {row["order_id"]: row for row in load_ledger_csv(DEMO_DIR / "internal_ledger.csv")}
 
 
 def test_all_15_planted_tds_defects_are_detected_against_demo_data():
