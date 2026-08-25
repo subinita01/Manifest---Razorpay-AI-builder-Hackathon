@@ -362,6 +362,7 @@ def _build_settlement_and_bank(state: GeneratorState, batches: list[list[Order]]
                         "card_network": card_network,
                     }
                 )
+                settlement_ids_for_batch.append(f"{settlement_id}_rf")
                 actual_net -= refund_amount
 
             if state.rng.random() < 0.01:
@@ -388,12 +389,16 @@ def _build_settlement_and_bank(state: GeneratorState, batches: list[list[Order]]
                         "card_network": card_network,
                     }
                 )
+                settlement_ids_for_batch.append(f"{settlement_id}_cb")
                 actual_net -= chargeback_amount
 
         bank_credit = actual_net
         residual_note = None
         if label == "ROUNDING":
-            drift = Decimal(state.rng.choice([-5, -3, -1, 1, 3, 5])) / Decimal(100)
+            # Must stay strictly greater than core.models.TOLERANCE (0.01) or
+            # Stage 1's amount check silently absorbs it as a clean match,
+            # making the planted defect invisible to the pipeline.
+            drift = Decimal(state.rng.choice([-9, -7, -5, -3, 3, 5, 7, 9])) / Decimal(100)
             bank_credit = _q(bank_credit + drift)
             residual_note = str(abs(drift))
 
@@ -506,13 +511,15 @@ def _plant_bank_only(state: GeneratorState) -> None:
 
 
 def _plant_ledger_only(state: GeneratorState) -> None:
-    settled_order_ids = {row["order_id"] for row in state.settlement_rows}
-    candidates = [o for o in state.orders if o.order_id in settled_order_ids]
-    victims = state.rng.sample(candidates, k=min(3, len(candidates)))
+    """Remove 3 orders from the settlement pipeline entirely, before batching,
+    so their ledger row has no corresponding settlement. This must run before
+    _chunk_into_batches/_build_settlement_and_bank: removing a settlement row
+    *after* a batch's ground-truth entry is recorded would leave that entry's
+    settlement_ids pointing at a row that no longer exists.
+    """
+    victims = state.rng.sample(state.orders, k=min(3, len(state.orders)))
     victim_ids = {o.order_id for o in victims}
-    state.settlement_rows = [
-        row for row in state.settlement_rows if row["order_id"] not in victim_ids
-    ]
+    state.orders = [o for o in state.orders if o.order_id not in victim_ids]
     for order in victims:
         state.planted_exceptions.append(
             {
@@ -599,11 +606,11 @@ def generate(seed: int, n_orders: int, out_dir: Path) -> None:
     _make_orders(state, n_orders)
     _build_ledger(state)
     _plant_tds_defects(state)
+    _plant_ledger_only(state)
 
     batches = _chunk_into_batches(state)
     _build_settlement_and_bank(state, batches)
     _plant_bank_only(state)
-    _plant_ledger_only(state)
     _plant_unresolvable(state)
 
     out_dir.mkdir(parents=True, exist_ok=True)
