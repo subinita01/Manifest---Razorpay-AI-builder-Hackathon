@@ -104,11 +104,18 @@ def _group_candidates(residue_settlement: list[dict[str, Any]]) -> list[Candidat
 
 
 def match_fuzzy(
-    residue_bank: list[dict[str, Any]], residue_settlement: list[dict[str, Any]]
+    residue_bank: list[dict[str, Any]],
+    residue_settlement: list[dict[str, Any]],
+    auto_match_threshold: float | None = None,
 ) -> StageResult:
+    """auto_match_threshold overrides config/settings.yaml's value when set
+    -- used by evaluation/ablation.py's threshold sweep so the sweep doesn't
+    have to mutate the config file to explore other thresholds."""
     start = time.perf_counter()
     result = StageResult(stage_name="stage5_fuzzy")
     auto_threshold, review_threshold, ambiguity_margin = _fuzzy_settings()
+    if auto_match_threshold is not None:
+        auto_threshold = auto_match_threshold
 
     candidates = _group_candidates(residue_settlement)
     matched_utrs: set[str] = set()

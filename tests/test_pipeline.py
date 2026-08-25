@@ -60,6 +60,13 @@ def test_invariant_holds_on_a_clean_dataset():
     assert result.exceptions == []
 
 
+def test_run_result_retains_the_bridge_for_every_matched_batch():
+    bank_rows, settlement_rows, ledger_rows = _clean_dataset()
+    result = run_pipeline(bank_rows, settlement_rows, ledger_rows)
+    assert "1234567890123456" in result.bridges
+    assert result.bridges["1234567890123456"].closed is True
+
+
 def test_invariant_fires_when_a_stage_silently_drops_a_row(monkeypatch):
     import core.pipeline as pipeline_module
     from core.matching.stage_result import StageResult

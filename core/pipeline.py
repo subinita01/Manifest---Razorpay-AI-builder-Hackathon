@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core.matching.stage1_utr import match_utr
-from core.matching.stage2_bridge import build_bridge
+from core.matching.stage2_bridge import BridgeResult, build_bridge
 from core.matching.stage3_order import match_order
 from core.matching.stage4_tds import evaluate_tds
 from core.matching.stage5_fuzzy import match_fuzzy
@@ -49,6 +49,10 @@ class RunResult:
     needs_review: list[MatchResult] = field(default_factory=list)
     exceptions: list[Exception_] = field(default_factory=list)
     stage_results: dict[str, StageResult] = field(default_factory=dict)
+    # Every bridge actually computed (Stage 1 or 5 matches only -- needs_review
+    # candidates aren't bridge-audited), keyed by settlement_utr, so the API
+    # and UI can show a waterfall for any matched batch, closed or flagged.
+    bridges: dict[str, BridgeResult] = field(default_factory=dict)
     total_input_rows: int = 0
     matched_row_count: int = 0
     needs_review_row_count: int = 0
@@ -59,12 +63,40 @@ def run_pipeline(
     bank_rows: list[dict[str, Any]],
     settlement_rows: list[dict[str, Any]],
     ledger_rows: list[dict[str, Any]],
+    use_stage2: bool = True,
+    use_stage3: bool = True,
+    use_stage4: bool = True,
+    use_stage5: bool = True,
+    fuzzy_auto_match_threshold: float | None = None,
 ) -> RunResult:
+    """The use_stageN flags exist for evaluation/ablation.py's cumulative
+    configurations; a normal run leaves them all True. Disabling a stage
+    simply removes its contribution -- whatever it would have explained
+    falls through to a structural exception (SETTLEMENT_ONLY, LEDGER_ONLY,
+    BANK_ONLY), so the invariant still holds at every configuration, just
+    with a worse exception rate. fuzzy_auto_match_threshold is passed
+    through to Stage 5 for the threshold sweep."""
     total_input_rows = len(bank_rows) + len(settlement_rows) + len(ledger_rows)
 
     stage1 = match_utr(bank_rows, settlement_rows)
-    stage5 = match_fuzzy(stage1.residue_bank, stage1.residue_settlement)
-    stage3 = match_order(settlement_rows, ledger_rows)
+    stage5 = (
+        match_fuzzy(stage1.residue_bank, stage1.residue_settlement, fuzzy_auto_match_threshold)
+        if use_stage5
+        else StageResult(
+            stage_name="stage5_fuzzy",
+            residue_bank=stage1.residue_bank,
+            residue_settlement=stage1.residue_settlement,
+        )
+    )
+    stage3 = (
+        match_order(settlement_rows, ledger_rows)
+        if use_stage3
+        else StageResult(
+            stage_name="stage3_order",
+            residue_settlement=settlement_rows,
+            residue_ledger=ledger_rows,
+        )
+    )
 
     matched: list[MatchResult] = list(stage1.matched) + list(stage5.matched)
     needs_review: list[MatchResult] = list(stage5.needs_review)
@@ -78,31 +110,37 @@ def run_pipeline(
 
     flagged_settlement_ids: set[str] = set()
     flagged_bank_ids: set[Any] = set()
-    for match in list(stage1.matched) + list(stage5.matched):
-        utr = match.settlement_row_id
-        rows = settlement_by_utr.get(utr, [])
-        bank_row = bank_by_id.get(int(match.bank_row_id)) if match.bank_row_id is not None else None
-        if not rows or bank_row is None:
-            continue
-        bridge = build_bridge(utr, rows, bank_row["credit"])
-        exc = classify_bridge_result(bridge)
-        if exc is not None:
-            exceptions.append(exc)
-            flagged_settlement_ids.update(row["settlement_id"] for row in rows)
-            flagged_bank_ids.add(bank_row["row_id"])
+    bridges: dict[str, BridgeResult] = {}
+    if use_stage2:
+        for match in list(stage1.matched) + list(stage5.matched):
+            utr = match.settlement_row_id
+            rows = settlement_by_utr.get(utr, [])
+            bank_row = (
+                bank_by_id.get(int(match.bank_row_id)) if match.bank_row_id is not None else None
+            )
+            if not rows or bank_row is None:
+                continue
+            bridge = build_bridge(utr, rows, bank_row["credit"])
+            bridges[utr] = bridge
+            exc = classify_bridge_result(bridge)
+            if exc is not None:
+                exceptions.append(exc)
+                flagged_settlement_ids.update(row["settlement_id"] for row in rows)
+                flagged_bank_ids.add(bank_row["row_id"])
 
     # --- Stage 4: TDS validation for every order Stage 3 matched.
     ledger_by_order = {row["order_id"]: row for row in ledger_rows}
     flagged_order_ids: set[str] = set()
-    for match in stage3.matched:
-        order_id = match.ledger_row_id
-        ledger_row = ledger_by_order.get(order_id)
-        if ledger_row is None:
-            continue
-        finding = evaluate_tds(order_id, ledger_row)
-        if finding is not None:
-            exceptions.append(classify_tds_finding(order_id, finding))
-            flagged_order_ids.add(order_id)
+    if use_stage4:
+        for match in stage3.matched:
+            order_id = match.ledger_row_id
+            ledger_row = ledger_by_order.get(order_id)
+            if ledger_row is None:
+                continue
+            finding = evaluate_tds(order_id, ledger_row)
+            if finding is not None:
+                exceptions.append(classify_tds_finding(order_id, finding))
+                flagged_order_ids.add(order_id)
 
     # --- Stage 6: structural exceptions for whatever never matched at all.
     # SETTLEMENT_ONLY is specifically "no ledger row for this settlement"
@@ -159,6 +197,7 @@ def run_pipeline(
             "stage3_order": stage3,
             "stage5_fuzzy": stage5,
         },
+        bridges=bridges,
         total_input_rows=total_input_rows,
         matched_row_count=matched_row_count,
         needs_review_row_count=needs_review_row_count,
