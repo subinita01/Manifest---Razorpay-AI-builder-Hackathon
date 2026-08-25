@@ -6,7 +6,7 @@ PYTHON_BIN := $(shell command -v python3.11 2>/dev/null || command -v python3.12
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: install test lint audit demo-data demo eval clean
+.PHONY: install test lint audit demo-data demo eval smoke cov clean
 
 $(PYTHON):
 	@if [ -z "$(PYTHON_BIN)" ]; then \
@@ -40,6 +40,12 @@ demo:
 
 eval:
 	$(PYTHON) -m evaluation.ablation
+
+smoke:
+	$(PYTHON) -m scripts.smoke_test
+
+cov:
+	$(PYTHON) -m pytest --cov=core --cov-report=term-missing
 
 clean:
 	find . -name "__pycache__" -type d -prune -exec rm -rf {} +

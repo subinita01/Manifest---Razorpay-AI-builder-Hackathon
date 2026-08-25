@@ -1,5 +1,9 @@
 # MANIFEST
 
+[![CI](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml/badge.svg)](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml)
+
+<!-- Replace <OWNER>/<REPO> above with the actual GitHub path once this repo has a remote -- there is none configured yet, so this badge won't resolve until then. -->
+
 MANIFEST is a deterministic reconciliation and exception auditor for settlement, bank, and ledger data, built for the Razorpay AI Buildathon Track 04.
 
 ## Goal

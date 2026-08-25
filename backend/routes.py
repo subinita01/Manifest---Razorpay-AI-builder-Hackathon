@@ -10,14 +10,13 @@ string -- `str | None` etc. work natively on Python 3.11 without it.
 """
 
 import json
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, Header, HTTPException, Request, UploadFile
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from backend import db
+from backend import audit_log, db
 from backend.schemas import IngestResponse, ManifestResponse, ReconcileRequest, RunStatusResponse
 from backend.security import (
     TooManyRows,
@@ -29,13 +28,9 @@ from backend.security import (
     stream_upload_to_file,
 )
 from backend.services.reconcile_service import DatasetNotFound, reconcile, resolve_dataset_dir
-from core.audit import AuditLogger
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
-
-AUDIT_LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "audit.jsonl"
-audit_logger = AuditLogger(AUDIT_LOG_PATH)
 
 
 @router.get("/healthz")
@@ -79,7 +74,9 @@ async def ingest(
             raise HTTPException(status_code=413, detail=str(exc)) from exc
         validation[key] = {"size_bytes": size, "rows": rows}
 
-    audit_logger.append({"event": "ingest", "dataset_id": dataset_id, "validation": validation})
+    audit_log.get_audit_logger().append(
+        {"event": "ingest", "dataset_id": dataset_id, "validation": validation}
+    )
     return IngestResponse(dataset_id=dataset_id, status="validated", validation=validation)
 
 
@@ -105,7 +102,9 @@ def do_reconcile(
         raise HTTPException(status_code=404, detail=f"unknown dataset: {exc}") from exc
 
     stored = db.get_run(conn, run_id)
-    audit_logger.append({"event": "reconcile", "run_id": run_id, "dataset_id": payload.dataset_id})
+    audit_log.get_audit_logger().append(
+        {"event": "reconcile", "run_id": run_id, "dataset_id": payload.dataset_id}
+    )
     return RunStatusResponse(
         run_id=run_id,
         status="completed",
@@ -219,10 +218,10 @@ def get_metrics(run_id: str) -> dict[str, Any]:
 
 @router.get("/audit/{run_id}")
 def get_audit(run_id: str) -> dict[str, Any]:
-    if not AUDIT_LOG_PATH.exists():
+    if not audit_log.AUDIT_LOG_PATH.exists():
         return {"run_id": run_id, "events": [], "chain_valid": True}
     events = []
-    with AUDIT_LOG_PATH.open("r", encoding="utf-8") as handle:
+    with audit_log.AUDIT_LOG_PATH.open("r", encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
             if not line:
@@ -230,4 +229,5 @@ def get_audit(run_id: str) -> dict[str, Any]:
             record = json.loads(line)
             if record.get("event", {}).get("run_id") == run_id:
                 events.append(record)
-    return {"run_id": run_id, "events": events, "chain_valid": audit_logger.verify_chain()}
+    chain_valid = audit_log.get_audit_logger().verify_chain()
+    return {"run_id": run_id, "events": events, "chain_valid": chain_valid}

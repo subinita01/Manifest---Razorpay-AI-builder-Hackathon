@@ -27,6 +27,7 @@ from app.bridge_presets import pick_clean_default, pick_unresolved_preset  # noq
 from app.eval_reports import EvalReportMissing, load_ablation, load_threshold_sweep  # noqa: E402
 from app.formatting import MONOSPACE_CSS, format_int, format_money  # noqa: E402
 from backend import db  # noqa: E402
+from backend.audit_log import get_audit_logger  # noqa: E402
 from backend.export import exceptions_to_csv  # noqa: E402
 from backend.security import (  # noqa: E402
     TooManyRows,
@@ -484,3 +485,30 @@ with metrics_tab:
             )
             if unexplained_source:
                 st.caption(f"Source: {unexplained_source}")
+
+
+# --------------------------------------------------------------------------
+# Footer: RunManifest for the active run, and live audit-chain verification.
+# --------------------------------------------------------------------------
+st.divider()
+footer_run_id = st.session_state.get("run_id")
+if footer_run_id:
+    footer_run = db.get_run(get_db_connection(), footer_run_id)
+    if footer_run:
+        f1, f2, f3, f4 = st.columns(4)
+        f1.caption(f"**run_id**  \n`{footer_run['run_id']}`")
+        f2.caption(f"**seed**  \n{footer_run['seed']}")
+        f3.caption(f"**git_sha**  \n`{footer_run['git_sha'] or 'n/a (not a git repo)'}`")
+        f4.caption(f"**config_hash**  \n`{footer_run['config_hash']}`")
+        f5, f6 = st.columns(2)
+        f5.caption(f"**model_string**  \n{footer_run['model_string'] or 'none'}")
+        lib_versions = ", ".join(f"{k}={v}" for k, v in footer_run["library_versions"].items())
+        f6.caption(f"**library_versions**  \n{lib_versions}")
+        st.caption(f"created_at: {footer_run['created_at']}")
+
+if st.button("Verify audit chain"):
+    chain_valid = get_audit_logger().verify_chain()
+    if chain_valid:
+        st.success("Audit chain verified: every record's hash and prev_hash link checks out.")
+    else:
+        st.error("Audit chain verification FAILED -- a record has been tampered with or removed.")

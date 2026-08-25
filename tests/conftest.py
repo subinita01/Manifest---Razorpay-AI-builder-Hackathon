@@ -1,9 +1,22 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import backend.audit_log as audit_log_module
 import backend.db as db_module
 from backend.main import app
 from backend.routes import limiter
+
+
+@pytest.fixture(autouse=True)
+def _isolated_audit_log(tmp_path, monkeypatch):
+    # Every test that runs reconcile_service.reconcile() (directly, or via
+    # the /reconcile or /ingest endpoints) appends to the audit log --
+    # without this, every test run silently grows the real
+    # data/audit.jsonl by dozens of lines (one per exception decision plus
+    # a summary record), which is exactly what happened before this
+    # fixture existed: a 1000-line, 495KB file accumulated from test runs
+    # alone. autouse so no current or future test can reintroduce it.
+    monkeypatch.setattr(audit_log_module, "AUDIT_LOG_PATH", tmp_path / "audit.jsonl")
 
 
 @pytest.fixture()

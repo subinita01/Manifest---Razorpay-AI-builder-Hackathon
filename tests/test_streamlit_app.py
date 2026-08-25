@@ -85,6 +85,21 @@ def test_bridge_doesnt_close_preset_switches_selection(app: AppTest):
     assert at.session_state["bridge_selected_utr"] != default_utr
 
 
+def test_footer_shows_run_manifest_and_verify_chain_button(app: AppTest):
+    at = _run_demo(app)
+    assert not at.exception
+
+    caption_text = " ".join(c.value for c in at.caption)
+    assert "run_id" in caption_text
+    assert "git_sha" in caption_text
+    assert "config_hash" in caption_text
+
+    verify_button = next(b for b in at.button if b.label == "Verify audit chain")
+    at = verify_button.click().run()
+    assert not at.exception
+    assert at.success or at.error  # the click must produce a real live verdict
+
+
 def test_metrics_tab_renders_ablation_table_and_unexplained_card(app: AppTest):
     at = _run_demo(app)
     assert not at.exception

@@ -10,19 +10,87 @@ import hashlib
 import json
 import os
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
 from backend import db
+from backend.audit_log import get_audit_logger
 from backend.security import UnsafePath, dataset_dir, validate_dataset_id
+from core.audit import AuditLogger
 from core.ingest import load_bank_csv, load_ledger_csv, load_settlement_csv
-from core.pipeline import run_pipeline
+from core.pipeline import RunResult, run_pipeline
 from core.run_manifest import build_run_manifest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DEMO_DIR = ROOT / "data" / "demo"
+
+# Maps each taxonomy code back to the stage that actually produced it, since
+# Exception_ itself doesn't carry a stage field -- taxonomy_code already
+# determines origin deterministically (see core/pipeline.py's Stage 2/4/6
+# classification calls).
+_EXCEPTION_STAGE = {
+    "FEE_VARIANCE": "stage2_bridge",
+    "GST_ON_MDR_VARIANCE": "stage2_bridge",
+    "ROUNDING": "stage2_bridge",
+    "UNEXPLAINED": "stage2_bridge",
+    "TDS_CODE_MIGRATION_BREAK": "stage4_tds",
+    "TDS_RATE_MISMATCH": "stage4_tds",
+    "TDS_AMOUNT_MISMATCH": "stage4_tds",
+    "AMBIGUOUS_MATCH": "stage1_stage5_match",
+    "BANK_ONLY": "stage5_fuzzy",
+    "LEDGER_ONLY": "stage3_order",
+    "SETTLEMENT_ONLY": "stage3_order",
+}
+
+
+def _sha256(payload: Any) -> str:
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def record_pipeline_decisions(
+    logger: AuditLogger, run_id: str, dataset_id: str, result: RunResult
+) -> None:
+    """One audit record per exception -- the "why was this flagged" trail
+    an auditor actually needs -- plus one summary record for the run as a
+    whole. Deliberately NOT one record per matched row: a thousand-row
+    clean match would turn the audit log into noise nobody would ever
+    read, and the decisions worth an append-only, tamper-evident trail are
+    the ones a human will actually be asked to justify."""
+    now = datetime.now(UTC).isoformat()
+    logger.append(
+        {
+            "timestamp": now,
+            "run_id": run_id,
+            "dataset_id": dataset_id,
+            "stage": "pipeline",
+            "decision": "run_summary",
+            "input_ids": [],
+            "sha256": _sha256(
+                {
+                    "matched_row_count": result.matched_row_count,
+                    "needs_review_row_count": result.needs_review_row_count,
+                    "exception_row_count": result.exception_row_count,
+                    "total_input_rows": result.total_input_rows,
+                }
+            ),
+        }
+    )
+    for exc in result.exceptions:
+        logger.append(
+            {
+                "timestamp": now,
+                "run_id": run_id,
+                "dataset_id": dataset_id,
+                "stage": _EXCEPTION_STAGE.get(exc.taxonomy_code, "stage6_classify"),
+                "decision": exc.taxonomy_code,
+                "input_ids": exc.row_ids,
+                "sha256": _sha256(exc.detail),
+            }
+        )
 
 
 class DatasetNotFound(FileNotFoundError):
@@ -100,6 +168,8 @@ def reconcile(
     seed = 42 if dataset_id == "demo" else 0
     manifest = build_run_manifest(run_id, seed=seed, model_string=model_string)
 
+    record_pipeline_decisions(get_audit_logger(), run_id, dataset_id, result)
+
     db.save_run(
         conn,
         manifest,
@@ -117,5 +187,6 @@ __all__ = [
     "UnsafePath",
     "compute_idempotency_key",
     "reconcile",
+    "record_pipeline_decisions",
     "resolve_dataset_dir",
 ]
