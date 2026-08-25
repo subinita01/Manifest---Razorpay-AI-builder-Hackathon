@@ -12,6 +12,7 @@ from backend.security import (
     enforce_row_limit,
     new_dataset_id,
     stream_upload_to_file,
+    stream_upload_to_file_sync,
     validate_dataset_id,
 )
 
@@ -77,3 +78,20 @@ def test_enforce_row_limit_accepts_within_bounds(tmp_path):
     path = tmp_path / "small.csv"
     path.write_text("a\nb\nc\n")
     assert enforce_row_limit(path, max_rows=10) == 3
+
+
+def test_sync_stream_upload_rejects_oversized_file(tmp_path):
+    oversized = io.BytesIO(b"x" * (MAX_UPLOAD_BYTES + 1))
+    destination = tmp_path / "out.csv"
+    with pytest.raises(UploadTooLarge):
+        stream_upload_to_file_sync(oversized, destination)
+    assert not destination.exists()
+
+
+def test_sync_stream_upload_accepts_a_normal_file(tmp_path):
+    data = b"a,b,c\n1,2,3\n"
+    upload = io.BytesIO(data)  # Streamlit's UploadedFile behaves like BytesIO
+    destination = tmp_path / "out.csv"
+    written = stream_upload_to_file_sync(upload, destination)
+    assert written == len(data)
+    assert destination.read_bytes() == data

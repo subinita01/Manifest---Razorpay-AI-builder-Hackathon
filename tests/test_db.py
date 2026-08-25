@@ -5,6 +5,7 @@ from pathlib import Path
 from backend.db import (
     find_run_by_idempotency_key,
     get_bridge,
+    get_bridge_utrs,
     get_connection,
     get_exceptions,
     get_run,
@@ -96,6 +97,16 @@ def test_save_and_retrieve_a_run(tmp_path: Path):
     assert bridge["closed"] is True
     assert bridge["rate_variance"]["rule"] == "FEE_VARIANCE"
     assert Decimal(bridge["expected_net"]) == Decimal("976.40")
+
+    utrs = get_bridge_utrs(conn, "run_1")
+    assert utrs == [
+        {
+            "settlement_utr": "utr1",
+            "closed": True,
+            "attribution_rule": None,
+            "rate_variance_rule": "FEE_VARIANCE",
+        }
+    ]
 
 
 def test_idempotency_key_lookup(tmp_path: Path):

@@ -243,6 +243,30 @@ def get_exceptions(conn: duckdb.DuckDBPyConnection, run_id: str) -> list[dict[st
     ]
 
 
+def get_bridge_utrs(conn: duckdb.DuckDBPyConnection, run_id: str) -> list[dict[str, Any]]:
+    """Every bridge computed for a run, for populating a settlement-batch
+    picker without pulling each bridge's full step/detail payload."""
+    rows = conn.execute(
+        "SELECT settlement_utr, closed, attribution, rate_variance FROM bridges "
+        "WHERE run_id = ? ORDER BY settlement_utr",
+        [run_id],
+    ).fetchall()
+
+    def _rule(raw: str | None) -> str | None:
+        parsed = json.loads(raw) if raw else None
+        return parsed["rule"] if parsed else None
+
+    return [
+        {
+            "settlement_utr": r[0],
+            "closed": r[1],
+            "attribution_rule": _rule(r[2]),
+            "rate_variance_rule": _rule(r[3]),
+        }
+        for r in rows
+    ]
+
+
 def get_bridge(
     conn: duckdb.DuckDBPyConnection, run_id: str, settlement_utr: str
 ) -> dict[str, Any] | None:

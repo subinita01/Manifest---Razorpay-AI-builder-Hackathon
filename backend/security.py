@@ -66,14 +66,34 @@ def validate_dataset_id(dataset_id: str) -> str:
 
 
 async def stream_upload_to_file(upload_file, destination: Path) -> int:
-    """Write an UploadFile to destination in chunks, aborting as soon as
-    MAX_UPLOAD_BYTES is exceeded rather than buffering the whole file
-    first. Returns the byte count written."""
+    """Write a FastAPI UploadFile (async .read(size)) to destination in
+    chunks, aborting as soon as MAX_UPLOAD_BYTES is exceeded rather than
+    buffering the whole file first. Returns the byte count written."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     total = 0
     with destination.open("wb") as handle:
         while True:
             chunk = await upload_file.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_UPLOAD_BYTES:
+                handle.close()
+                destination.unlink(missing_ok=True)
+                raise UploadTooLarge(f"upload exceeds {MAX_UPLOAD_BYTES} bytes")
+            handle.write(chunk)
+    return total
+
+
+def stream_upload_to_file_sync(file_like, destination: Path) -> int:
+    """Same as stream_upload_to_file, for a file-like object with a sync
+    .read(size) -- e.g. Streamlit's UploadedFile, which the async version
+    can't consume directly."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    total = 0
+    with destination.open("wb") as handle:
+        while True:
+            chunk = file_like.read(CHUNK_SIZE)
             if not chunk:
                 break
             total += len(chunk)
