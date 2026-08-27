@@ -367,7 +367,7 @@ with manifest_tab:
                 # Compare against the actual fallback text instead.
                 if result.answer == fallback_answer().answer:
                     reason = (
-                        "no ANTHROPIC_API_KEY or GEMINI_API_KEY set"
+                        "no ANTHROPIC_API_KEY, GEMINI_API_KEY, or NVIDIA_API_KEY set"
                         if adapter.model_string == "none"
                         else f"a key was found ({adapter.model_string}) but the live request failed"
                     )

@@ -124,7 +124,8 @@ def run_cumulative_ablation() -> str:
         and llm_result.exception_row_count == stage5_result.exception_row_count
     )
     key_note = (
-        "no ANTHROPIC_API_KEY or GEMINI_API_KEY was set, so this used the deterministic "
+        "no ANTHROPIC_API_KEY, GEMINI_API_KEY, or NVIDIA_API_KEY was set, so this used the "
+        "deterministic "
         "NullAdapter fallback"
         if adapter.model_string == "none"
         else "a real API key was present"
