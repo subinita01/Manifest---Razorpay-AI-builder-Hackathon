@@ -1,8 +1,8 @@
 # MANIFEST
 
-[![CI](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml/badge.svg)](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml)
+[![CI](https://github.com/subinita01/Manifest---Razorpay-AI-builder-Hackathon/actions/workflows/ci.yml/badge.svg)](https://github.com/subinita01/Manifest---Razorpay-AI-builder-Hackathon/actions/workflows/ci.yml)
 
-<!-- Replace <OWNER>/<REPO> above with the actual GitHub path once this repo has a remote -- there is none configured yet, so this badge won't resolve until then. -->
+**Live demo:** [manifest---razorpay-ai-builder-hackathongit-gqvpypgmk6jyx9fq3a.streamlit.app](https://manifest---razorpay-ai-builder-hackathongit-gqvpypgmk6jyx9fq3a.streamlit.app/) -- no install required, the demo dataset loads with one click.
 
 MANIFEST is a settlement, tax-line, and exception auditor for Razorpay-style payment reconciliation, built for the Razorpay AI Buildathon Track 04.
 
@@ -72,6 +72,10 @@ make demo        # streamlit run app/streamlit_app.py
 
 Four commands, no API key required -- `use_llm` defaults to off, and even switched on with no `ANTHROPIC_API_KEY` set, the app runs end to end against the deterministic `NullAdapter` fallback.
 
+## Try the upload flow with your own CSVs
+
+The Upload tab's "Load demo dataset" button is one click, but the app also accepts arbitrary bank/settlement/ledger CSVs through its own upload form -- to actually exercise that path rather than just the pre-loaded demo, [data/sample_upload/](data/sample_upload/) has a second, independently generated dataset (seed 7, different from the seed-42 demo) ready to upload: `bank_statement.csv`, `settlement_batch.csv`, `internal_ledger.csv`. Pick those three in the Upload tab, click "Validate and use these files," then Run -- it produces a genuinely different result (1,057 matched / 9 needs review / 207 exceptions, vs. the demo's 1,001 / 3 / 269), proving the run reflects whatever you actually uploaded. `ground_truth.json` is included alongside it for anyone who wants to verify MANIFEST's output independently, same as the main demo dataset -- it isn't one of the three files you upload.
+
 ## What this deliberately does NOT do
 
 - No real bank or Razorpay API integration -- CSV in, CSV/DuckDB out.
@@ -96,7 +100,7 @@ Full threat model and mitigating controls: [SECURITY.md](SECURITY.md). The one l
 - `core/` -- the deterministic matching cascade and schema contracts (`llm/`-free, 95%+ test coverage)
 - `llm/` -- optional advisory layer (narration classification, root-cause narrative, adjustment drafts)
 - `config/` -- YAML configuration (TDS code map, tolerances, chart of accounts)
-- `data/` -- synthetic generator and the committed demo dataset with ground truth
+- `data/` -- synthetic generator, the committed demo dataset (seed 42) with ground truth, and a second sample dataset (seed 7) for testing the manual upload flow
 - `evaluation/` -- metrics, ablation, and threshold-sweep scoring against ground truth
 - `scripts/` -- CI smoke test and demo utilities
 - `tests/` -- unit, integration, and security regression tests
