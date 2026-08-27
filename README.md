@@ -26,7 +26,41 @@ From `make eval`, against the committed demo dataset (seed 42, 600 orders, 1,273
 
 The LLM-advisory row in the same table reports **zero uplift on every core metric, by design** -- see [Architecture: the LLM contract](ARCHITECTURE.md#the-llm-contract) for why that's a guarantee, not a shortfall.
 
+## Who this is for
+
+Two people, two very different reasons to open this tool.
+
+### Priya, finance associate -- the Tuesday before month-end close
+
+**Before MANIFEST:** three exports open in three tabs -- a bank statement with one lumped NEFT credit and narration like `UPI-SETTLEMENT-8f3a...`, a settlement batch with 187 constituent payments, an internal ledger with gross invoice amounts. She's manually cross-referencing rows in a spreadsheet, hoping she doesn't miss the one line carrying a TDS code that doesn't exist yet under the new schedule. If she does, it surfaces three weeks later as a books mismatch with her sign-off on it.
+
+**With MANIFEST:** she loads the three files (or the one-click demo) and 1,273 rows are triaged in under a second -- 1,001 already match, 3 need a second look, 269 are explicitly flagged, not buried. She opens the Bridge tab on the big NEFT credit and watches it decompose visually into fees, GST, and refunds -- the exact math a spreadsheet formula chain used to hide. In the Manifest tab she filters straight to CRITICAL severity, and for the one she doesn't immediately follow, she types a question into "Ask about this run" instead of digging through raw JSON. She exports the real leftover list as a CSV for her manager, done before the deadline.
+
+**What actually changed:** the tool never lets her accidentally certify a false "everything's fine." It finishes the certain 90%+ instantly and hands back exactly the fraction that needs a human -- which is the actual job, not the busywork around it.
+
+### Arjun, finance controller -- signing off on the close
+
+**Before MANIFEST:** he signs off on adjustments based on what associates hand him -- a spreadsheet, a claim that "it reconciles." If an auditor asks how he knows it wasn't quietly force-matched to look clean, his honest answer is that he trusts the person who ran it, nothing more. And this year there's a new risk: the TDS code migration means the join key itself is changing mid-year, and he has no way to know if that's silently breaking something until a filing gets rejected.
+
+**With MANIFEST:** he opens the Metrics tab and sees precision and recall scored against real planted ground truth, including an ablation table proving the LLM layer contributes exactly zero to the actual matching decision -- the reasoning spelled out, not hidden. He scrolls to the footer and clicks "Verify audit chain" -- live, in front of him, a cryptographic check confirms nothing in the decision trail has been altered since it was written. Every exception traces back to a real row ID and a real number.
+
+**What actually changed:** he's no longer signing off on trust -- he's signing off on a system that structurally cannot fake its own numbers, and can prove on demand that its record hasn't been touched.
+
+## Why this matters
+
+Razorpay already runs Recon at 200 million transactions a month -- a generic reconciler pitch would be a worse clone of something that already exists, and any panel would say so immediately. What MANIFEST actually targets is the one gap Recon's public material doesn't claim: starting this financial year, the TDS code taxonomy itself changes shape mid-year (legacy section codes give way to numeric payment codes), meaning the join key a merchant's books depend on is moving underneath them. That's not a "match harder" problem -- it needs a system built to expect the join key to break.
+
+The risk this protects against isn't abstract. A reconciliation tool that silently force-matches through that transition can cause a merchant's input-tax-credit claim to break quietly, discovered weeks later -- and the platform they reconciled through is the first place blame lands, fair or not. A tool that refuses to fake a match, and can prove it refused, is a trust and liability reducer for whoever sits between the merchant and their books.
+
+There's also a more durable asset here than the specific TDS exception class: the pattern of exactly *how much* an LLM is allowed to touch a financial decision -- explain, draft, never decide -- is directly reusable anywhere an engineering team is nervous about bringing AI near money, not just this one workflow. The impact isn't "one more reconciliation feature"; it's a demonstrated, provable answer to the question every fintech eventually has to answer about AI: not *whether* to use it, but exactly *where the line is* and how you prove you never crossed it.
+
 ## Architecture
+
+**In plain English, before the diagram:** think of the six-stage cascade as a careful mail-sorting line, not one black box. Stage 1 pulls out the obvious matches -- a bank credit and a settlement batch sharing the exact same reference and amount. Whatever's left goes to Stage 2, which is like showing your work on a math problem: it rebuilds each settlement's fees and taxes step by step so you can watch where the money actually went, instead of being told "trust me." Stages 3 and 4 do the same careful checking on the tax-code side, catching exactly the kind of code-migration break this year is about to cause everywhere. Stage 5 is the "use judgment, carefully" stage -- fuzzy matching for the messy leftovers, refusing to guess on a genuine toss-up rather than picking one arbitrarily. Stage 6 is where anything still unexplained gets labeled honestly instead of forced into a slot it doesn't belong in.
+
+The AI in this system is kept on a short leash on purpose: it's allowed to write an explanation or draft a suggested fix, the way a junior analyst's work always needs a senior sign-off -- except here the "senior" is fixed math logic that can't be talked into anything, tricked, or have a bad day. That's provable, not just claimed: the code that makes the actual decision has no way to call the AI at all.
+
+Every decision also gets written into a locked notebook where each new entry carries a fingerprint of the one before it -- so if anyone ever went back and edited an old entry, the fingerprints would stop lining up immediately, not get discovered by accident months later. And the exact tax-code mappings this all depends on live in a plain settings file, not buried in code -- so when the government finalizes the real numbers, fixing it is a spreadsheet-style edit, not a software rewrite.
 
 ```mermaid
 flowchart TD
