@@ -76,6 +76,30 @@ def root_cause_prompt(taxonomy_code: str, pruned_detail: dict[str, Any]) -> tupl
     return system, user
 
 
+def query_prompt(question: str, exception_summaries: list[dict[str, Any]]) -> tuple[str, str]:
+    """The exception summaries -- and everything inside them -- ultimately
+    trace back to bank narration and other ingested data (CLAUDE.md rule
+    5's "untrusted" surface), which is why they're wrapped the same as
+    every other prompt here. The question itself is the user's own typed
+    text about their own already-visible data, so there's no privilege
+    boundary being crossed -- it's wrapped for consistency and to keep a
+    pathological paste from restructuring the prompt, not because asking
+    a question is itself suspicious."""
+    system = (
+        SYSTEM_PREAMBLE + "\n\nAnswer the user's question about this reconciliation run's "
+        "exceptions, using ONLY the exception summaries provided -- never invent an "
+        "exception, a row ID, or an amount that isn't listed below. If the provided "
+        "data doesn't contain enough information to answer, say so plainly rather "
+        "than guessing. List the exception_id(s) your answer is actually based on. "
+        'Respond with JSON matching: {"answer": str (<=1000 chars), '
+        '"cited_exception_ids": [str, ...] (0-20 items, must be exception_id values '
+        "that appear in the data below)}."
+    )
+    payload = json.dumps({"question": question, "exceptions": exception_summaries}, default=str)
+    user = f"<untrusted_data>{payload}</untrusted_data>"
+    return system, user
+
+
 def adjustment_draft_prompt(
     taxonomy_code: str, amount_impact: str, chart_of_accounts: list[str]
 ) -> tuple[str, str]:

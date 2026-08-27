@@ -100,6 +100,25 @@ def test_footer_shows_run_manifest_and_verify_chain_button(app: AppTest):
     assert at.success or at.error  # the click must produce a real live verdict
 
 
+def test_ask_about_this_run_falls_back_without_an_api_key(app: AppTest, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    at = _run_demo(app)
+    assert not at.exception
+
+    question_input = next(
+        t for t in at.text_input if t.label == "Ask a question about these exceptions"
+    )
+    at = question_input.set_value("Why is ord_00251 flagged?").run()
+
+    ask_button = next(b for b in at.button if b.label == "Ask")
+    assert not ask_button.disabled
+    at = ask_button.click().run()
+    assert not at.exception
+
+    info_text = " ".join(i.value for i in at.info)
+    assert "No LLM available" in info_text
+
+
 def test_metrics_tab_renders_ablation_table_and_unexplained_card(app: AppTest):
     at = _run_demo(app)
     assert not at.exception

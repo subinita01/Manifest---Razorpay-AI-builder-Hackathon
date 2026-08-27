@@ -6,6 +6,7 @@ API server to keep alive.
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -46,6 +47,8 @@ from backend.services.reconcile_service import (  # noqa: E402
 from core.config import load_settings  # noqa: E402
 from core.ingest import load_settlement_csv  # noqa: E402
 from core.taxonomy import Severity  # noqa: E402
+from llm.adapter import build_adapter  # noqa: E402
+from llm.query import answer_question  # noqa: E402
 
 st.set_page_config(page_title="MANIFEST", page_icon="\U0001f4d8", layout="wide")
 st.markdown(MONOSPACE_CSS, unsafe_allow_html=True)
@@ -344,6 +347,26 @@ with manifest_tab:
         if not exceptions:
             st.success("No exceptions on this run.")
         else:
+            st.markdown("**Ask about this run**")
+            question = st.text_input(
+                "Ask a question about these exceptions",
+                placeholder="Why is row ord_00251 unexplained?",
+                label_visibility="collapsed",
+            )
+            if st.button("Ask", disabled=not question.strip()):
+                adapter = build_adapter(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+                with st.spinner("Thinking..."):
+                    result = answer_question(adapter, question, exceptions)
+                st.info(result.answer)
+                if result.cited_exception_ids:
+                    st.caption(f"Based on: {', '.join(result.cited_exception_ids)}")
+                if adapter.model_string == "none":
+                    st.caption(
+                        "No ANTHROPIC_API_KEY set -- this answer came from the "
+                        "deterministic fallback, not a live model."
+                    )
+
+            st.divider()
             all_codes = sorted({e["taxonomy_code"] for e in exceptions})
             all_severities = [s.value for s in Severity]
 

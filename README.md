@@ -98,7 +98,7 @@ Full threat model and mitigating controls: [SECURITY.md](SECURITY.md). The one l
 - `app/` -- Streamlit demo (Upload, Run, Bridge, Manifest, Metrics tabs)
 - `backend/` -- FastAPI service, DuckDB persistence, security controls, audit wiring
 - `core/` -- the deterministic matching cascade and schema contracts (`llm/`-free, 95%+ test coverage)
-- `llm/` -- optional advisory layer (narration classification, root-cause narrative, adjustment drafts)
+- `llm/` -- optional advisory layer (narration classification, root-cause narrative, adjustment drafts, and an on-demand natural-language Q&A over a run's exceptions)
 - `config/` -- YAML configuration (TDS code map, tolerances, chart of accounts)
 - `data/` -- synthetic generator, the committed demo dataset (seed 42) with ground truth, and a second sample dataset (seed 7) for testing the manual upload flow
 - `evaluation/` -- metrics, ablation, and threshold-sweep scoring against ground truth

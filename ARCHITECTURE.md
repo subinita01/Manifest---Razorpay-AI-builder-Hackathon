@@ -28,6 +28,8 @@ This is also why the product's central claim is "it tells you what it couldn't m
 
 `llm/` is strictly advisory and additive. `llm/enrich.enrich_run_result` is the only place a `RunResult` and an LLM adapter meet, and it can only ever write three new keys into an `Exception_.detail` dict (`llm_narration_classification`, `llm_root_cause`, `llm_adjustment_draft`) -- it cannot touch `taxonomy_code`, `row_ids`, `amount_impact`, or the matched/needs_review lists, and it runs *after* the cascade has already finished and persisted its own decision.
 
+A fourth job, `llm/query.answer_question`, is separate from that eager per-run enrichment: it's an on-demand natural-language Q&A over an already-completed run's exceptions, driven live from the Manifest tab's "Ask about this run" box. It's advisory in the same structural sense as the other three -- it only ever returns text for display, it's never called from `core/pipeline.py` or `llm/enrich.py`, and it has no write path into `RunResult`, an exception, or anything persisted, so there's no mechanism by which an answer -- wrong, hallucinated, or otherwise -- could alter a decision. Any exception ID it cites is checked against the run's real exception IDs before being shown; a cited ID the model invented is dropped rather than making the whole answer untrustworthy.
+
 Guardrails, each backed by a test:
 
 - **Deterministic short-circuit before the model is even consulted.** `llm/advisory.classify_narration` scans bank narration against a fixed set of suspicious patterns (`_SUSPICIOUS_PATTERNS`) and flags it directly if matched -- an adapter is never asked to judge a payload that already looks like an injection attempt.

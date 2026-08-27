@@ -50,3 +50,10 @@ class AdjustmentDraft(BaseModel):
 
     lines: list[AdjustmentLine] = Field(min_length=1, max_length=10)
     memo: str = Field(max_length=300)
+
+
+class QueryAnswer(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    answer: str = Field(max_length=1000)
+    cited_exception_ids: list[str] = Field(default_factory=list, max_length=20)
