@@ -32,6 +32,41 @@ CUMULATIVE_CONFIGS = [
 THRESHOLD_SWEEP = [round(0.60 + 0.05 * i, 2) for i in range(8)]  # 0.60 .. 0.95
 
 
+def _count_real_llm_annotations(result) -> tuple[int, int]:
+    """Counts (real, total) LLM advisory annotations enrich_run_result
+    actually wrote -- distinguishing a genuine model response from a
+    deterministic fallback. adapter.model_string alone only reflects
+    whether a key was found at *construction* time; it stays a real model
+    name even when every individual live call fails (rate limits, a
+    transient provider error) and silently falls back -- confirmed live:
+    an NVIDIA/DeepSeek run where every one of ~90 calls hit a 429 still
+    left model_string='deepseek-ai/...', which would have made this
+    report's own "a real API key was present" line honest in letter but
+    misleading in spirit. Detection: llm/advisory.py's fallback functions
+    always set confidence=0.0 (narration, root cause) or a "Deterministic
+    fallback" memo (adjustment draft); a genuine model response practically
+    never lands exactly on confidence=0.0 or that literal memo text."""
+    real = 0
+    total = 0
+    for exc in result.exceptions:
+        narration = exc.detail.get("llm_narration_classification")
+        if narration is not None:
+            total += 1
+            if narration.get("confidence", 0.0) > 0.0:
+                real += 1
+        root_cause = exc.detail.get("llm_root_cause")
+        if root_cause is not None:
+            total += 1
+            if root_cause.get("confidence", 0.0) > 0.0:
+                real += 1
+        draft = exc.detail.get("llm_adjustment_draft")
+        if draft is not None:
+            total += 1
+            if "fallback" not in draft.get("memo", "").lower():
+                real += 1
+    return real, total
+
+
 def _load_demo():
     bank_rows = load_bank_csv(DEMO_DIR / "bank_statement.csv")
     settlement_rows = load_settlement_csv(DEMO_DIR / "settlement_batch.csv")
@@ -123,13 +158,28 @@ def run_cumulative_ablation() -> str:
         and llm_result.needs_review_row_count == stage5_result.needs_review_row_count
         and llm_result.exception_row_count == stage5_result.exception_row_count
     )
-    key_note = (
-        "no ANTHROPIC_API_KEY, GEMINI_API_KEY, or NVIDIA_API_KEY was set, so this used the "
-        "deterministic "
-        "NullAdapter fallback"
-        if adapter.model_string == "none"
-        else "a real API key was present"
-    )
+    if adapter.model_string == "none":
+        key_note = (
+            "no ANTHROPIC_API_KEY, GEMINI_API_KEY, or NVIDIA_API_KEY was set, so this used "
+            "the deterministic NullAdapter fallback"
+        )
+    else:
+        real_count, total_count = _count_real_llm_annotations(llm_result)
+        if real_count == 0:
+            key_note = (
+                f"a key was present but every one of the {total_count} live calls failed "
+                "and fell back to deterministic defaults (e.g. a rate limit) -- confirmed "
+                "live against NVIDIA/DeepSeek's free tier, which is why this check exists"
+            )
+        elif real_count < total_count:
+            key_note = (
+                f"a key was present; {real_count}/{total_count} advisory calls succeeded "
+                "live, the rest fell back"
+            )
+        else:
+            key_note = (
+                f"a real API key was present, and all {total_count} advisory calls succeeded live"
+            )
     comparison_note = "identical to" if same_as_stage5 else "DIFFERENT FROM"
     lines.append(
         f"LLM advisory ran with model_string={adapter.model_string!r} ({key_note}). "
