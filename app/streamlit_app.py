@@ -6,7 +6,6 @@ API server to keep alive.
 
 from __future__ import annotations
 
-import os
 import sys
 import time
 from pathlib import Path
@@ -47,7 +46,7 @@ from backend.services.reconcile_service import (  # noqa: E402
 from core.config import load_settings  # noqa: E402
 from core.ingest import load_settlement_csv  # noqa: E402
 from core.taxonomy import Severity  # noqa: E402
-from llm.adapter import build_adapter  # noqa: E402
+from llm.adapter import build_adapter_from_env  # noqa: E402
 from llm.query import answer_question  # noqa: E402
 
 st.set_page_config(page_title="MANIFEST", page_icon="\U0001f4d8", layout="wide")
@@ -354,7 +353,7 @@ with manifest_tab:
                 label_visibility="collapsed",
             )
             if st.button("Ask", disabled=not question.strip()):
-                adapter = build_adapter(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+                adapter = build_adapter_from_env()
                 with st.spinner("Thinking..."):
                     result = answer_question(adapter, question, exceptions)
                 st.info(result.answer)
@@ -362,9 +361,11 @@ with manifest_tab:
                     st.caption(f"Based on: {', '.join(result.cited_exception_ids)}")
                 if adapter.model_string == "none":
                     st.caption(
-                        "No ANTHROPIC_API_KEY set -- this answer came from the "
-                        "deterministic fallback, not a live model."
+                        "No ANTHROPIC_API_KEY or GEMINI_API_KEY set -- this answer came "
+                        "from the deterministic fallback, not a live model."
                     )
+                else:
+                    st.caption(f"Answered by: {adapter.model_string}")
 
             st.divider()
             all_codes = sorted({e["taxonomy_code"] for e in exceptions})

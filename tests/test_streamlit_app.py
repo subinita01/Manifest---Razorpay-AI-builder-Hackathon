@@ -102,6 +102,7 @@ def test_footer_shows_run_manifest_and_verify_chain_button(app: AppTest):
 
 def test_ask_about_this_run_falls_back_without_an_api_key(app: AppTest, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     at = _run_demo(app)
     assert not at.exception
 

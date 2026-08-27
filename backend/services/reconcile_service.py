@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -156,10 +155,10 @@ def reconcile(
         # pay it. Reading an API key from the environment is fine here --
         # this is backend/, not core/ (CLAUDE.md rule 2 only restricts
         # core/).
-        from llm.adapter import build_adapter
+        from llm.adapter import build_adapter_from_env
         from llm.enrich import enrich_run_result
 
-        adapter = build_adapter(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        adapter = build_adapter_from_env()
         model_string = adapter.model_string
         bank_narration_by_row_id = {row["row_id"]: row["narration"] for row in bank_rows}
         enrich_run_result(result, adapter, bank_narration_by_row_id)

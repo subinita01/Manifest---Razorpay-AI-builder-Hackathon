@@ -8,7 +8,6 @@ without running anything themselves.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from core.ingest import load_bank_csv, load_ledger_csv, load_settlement_csv
@@ -86,7 +85,7 @@ def run_cumulative_ablation() -> str:
 
     # Row 6: + LLM advisory. Deferred imports so the ablation module (and
     # every row above it) never needs llm/ to be importable at all.
-    from llm.adapter import build_adapter
+    from llm.adapter import build_adapter_from_env
     from llm.enrich import enrich_run_result
 
     llm_bank_rows, llm_settlement_rows, llm_ledger_rows = (
@@ -95,8 +94,7 @@ def run_cumulative_ablation() -> str:
         load_ledger_csv(DEMO_DIR / "internal_ledger.csv"),
     )
     llm_result = run_pipeline(llm_bank_rows, llm_settlement_rows, llm_ledger_rows)
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    adapter = build_adapter(api_key=api_key)
+    adapter = build_adapter_from_env()
     narration_by_row = {r["row_id"]: r["narration"] for r in llm_bank_rows}
     enrich_run_result(llm_result, adapter, narration_by_row)
     llm_report = evaluate_run(
@@ -126,9 +124,10 @@ def run_cumulative_ablation() -> str:
         and llm_result.exception_row_count == stage5_result.exception_row_count
     )
     key_note = (
-        "a real API key was present"
-        if api_key
-        else "no ANTHROPIC_API_KEY was set, so this used the deterministic NullAdapter fallback"
+        "no ANTHROPIC_API_KEY or GEMINI_API_KEY was set, so this used the deterministic "
+        "NullAdapter fallback"
+        if adapter.model_string == "none"
+        else "a real API key was present"
     )
     comparison_note = "identical to" if same_as_stage5 else "DIFFERENT FROM"
     lines.append(

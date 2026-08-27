@@ -70,7 +70,7 @@ make eval        # writes evaluation/results/ablation.md and threshold_sweep.md
 make demo        # streamlit run app/streamlit_app.py
 ```
 
-Four commands, no API key required -- `use_llm` defaults to off, and even switched on with no `ANTHROPIC_API_KEY` set, the app runs end to end against the deterministic `NullAdapter` fallback.
+Four commands, no API key required -- `use_llm` defaults to off, and even switched on with no `ANTHROPIC_API_KEY` set, the app runs end to end against the deterministic `NullAdapter` fallback. Want to see the live LLM path without a paid key? Set `GEMINI_API_KEY` instead (free tier at [aistudio.google.com](https://aistudio.google.com/apikey)) -- `build_adapter_from_env` checks Anthropic first, Gemini second.
 
 ## Try the upload flow with your own CSVs
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Protocol, TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -22,6 +23,7 @@ T = TypeVar("T", bound=BaseModel)
 TEMPERATURE = 0
 MAX_TOKENS = 1024
 PINNED_MODEL = "claude-sonnet-5"
+GEMINI_PINNED_MODEL = "gemini-3.5-flash"  # on Google AI Studio's free tier
 MAX_RETRIES = 1  # one retry maximum on schema failure, then give up
 
 
@@ -87,9 +89,74 @@ class AnthropicAdapter:
         return None
 
 
+class GeminiAdapter:
+    """Talks to the Google Gemini API. Free-tier friendly (see
+    GEMINI_PINNED_MODEL) -- a way to exercise every llm/ code path without
+    a paid Anthropic key. Requires the `google-genai` package and an API
+    key; both are only ever needed here, never in core/."""
+
+    def __init__(self, api_key: str, model: str = GEMINI_PINNED_MODEL):
+        from google import genai  # deferred: only llm/ needs this dependency at runtime
+
+        self._client = genai.Client(api_key=api_key)
+        self.model_string = model
+
+    def complete(self, system: str, user: str, schema: type[T]) -> T | None:
+        from google.genai import errors, types  # deferred, same reason as above
+
+        last_error: Exception | None = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = self._client.models.generate_content(
+                    model=self.model_string,
+                    contents=user,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system,
+                        temperature=TEMPERATURE,
+                        max_output_tokens=MAX_TOKENS,
+                        response_mime_type="application/json",
+                    ),
+                )
+                data = json.loads(response.text)
+                return schema.model_validate(data)
+            except (
+                errors.APIError,
+                ValidationError,
+                json.JSONDecodeError,
+                KeyError,
+                AttributeError,
+            ) as exc:
+                last_error = exc
+                logger.warning(
+                    "Gemini completion failed schema validation (attempt %d/%d): %s",
+                    attempt + 1,
+                    MAX_RETRIES + 1,
+                    exc,
+                )
+        logger.error("Gemini completion exhausted retries, falling back: %s", last_error)
+        return None
+
+
 def build_adapter(api_key: str | None, model: str = PINNED_MODEL) -> LLMAdapter:
-    """The single place that decides which adapter to use -- graceful
-    degradation to NullAdapter when no key is present, never a crash."""
+    """Explicit Anthropic-only construction -- graceful degradation to
+    NullAdapter when no key is present, never a crash."""
     if not api_key:
         return NullAdapter()
     return AnthropicAdapter(api_key=api_key, model=model)
+
+
+def build_adapter_from_env() -> LLMAdapter:
+    """The single place that decides which provider to use, so every
+    caller (backend/services/reconcile_service.py, app/streamlit_app.py,
+    evaluation/ablation.py) shares one policy instead of each hardcoding
+    "read ANTHROPIC_API_KEY" itself. Checked in order:
+    ANTHROPIC_API_KEY (the primary, most-tested path) -> GEMINI_API_KEY (a
+    free-tier fallback for testing without a paid key) -> NullAdapter,
+    same graceful degradation as build_adapter()."""
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        return AnthropicAdapter(api_key=anthropic_key)
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        return GeminiAdapter(api_key=gemini_key)
+    return NullAdapter()
