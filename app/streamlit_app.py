@@ -47,7 +47,7 @@ from core.config import load_settings  # noqa: E402
 from core.ingest import load_settlement_csv  # noqa: E402
 from core.taxonomy import Severity  # noqa: E402
 from llm.adapter import build_adapter_from_env  # noqa: E402
-from llm.query import answer_question  # noqa: E402
+from llm.query import answer_question, fallback_answer  # noqa: E402
 
 st.set_page_config(page_title="MANIFEST", page_icon="\U0001f4d8", layout="wide")
 st.markdown(MONOSPACE_CSS, unsafe_allow_html=True)
@@ -359,11 +359,19 @@ with manifest_tab:
                 st.info(result.answer)
                 if result.cited_exception_ids:
                     st.caption(f"Based on: {', '.join(result.cited_exception_ids)}")
-                if adapter.model_string == "none":
-                    st.caption(
-                        "No ANTHROPIC_API_KEY or GEMINI_API_KEY set -- this answer came "
-                        "from the deterministic fallback, not a live model."
+                # adapter.model_string only reflects whether a key was found at
+                # construction time -- it stays "gemini-3.5-flash" even when the
+                # live completion call itself failed and answer_question() fell
+                # back, which would otherwise show the misleading combination of
+                # a fallback answer captioned "Answered by: gemini-3.5-flash".
+                # Compare against the actual fallback text instead.
+                if result.answer == fallback_answer().answer:
+                    reason = (
+                        "no ANTHROPIC_API_KEY or GEMINI_API_KEY set"
+                        if adapter.model_string == "none"
+                        else f"a key was found ({adapter.model_string}) but the live request failed"
                     )
+                    st.caption(f"Deterministic fallback, not a live model -- {reason}.")
                 else:
                     st.caption(f"Answered by: {adapter.model_string}")
 

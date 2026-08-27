@@ -119,6 +119,10 @@ def test_ask_about_this_run_falls_back_without_an_api_key(app: AppTest, monkeypa
     info_text = " ".join(i.value for i in at.info)
     assert "No LLM available" in info_text
 
+    caption_text = " ".join(c.value for c in at.caption)
+    assert "no ANTHROPIC_API_KEY or GEMINI_API_KEY set" in caption_text
+    assert "Answered by:" not in caption_text
+
 
 def test_metrics_tab_renders_ablation_table_and_unexplained_card(app: AppTest):
     at = _run_demo(app)
