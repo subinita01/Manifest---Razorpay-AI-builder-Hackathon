@@ -1,5 +1,13 @@
-from llm.adapter import GeminiAdapter, NullAdapter, build_adapter, build_adapter_from_env
-from llm.schemas import NarrationClassification
+import pytest
+
+from llm.adapter import (
+    GeminiAdapter,
+    NullAdapter,
+    _parse_response,
+    build_adapter,
+    build_adapter_from_env,
+)
+from llm.schemas import NarrationClassification, NarrationType
 
 
 def test_null_adapter_always_returns_none():
@@ -51,6 +59,34 @@ def test_build_adapter_from_env_returns_null_adapter_with_no_keys(monkeypatch):
 
     adapter = build_adapter_from_env()
     assert isinstance(adapter, NullAdapter)
+
+
+def test_parse_response_coerces_a_real_provider_json_enum_string():
+    """Regression test for a real bug caught by the first-ever live LLM
+    call in this project (via GeminiAdapter, no key had been available
+    before): NarrationClassification sets strict=True in its own
+    model_config, and every schema.model_validate(data) call used to
+    validate under that config. JSON has no enum type, so narration_type
+    always arrives as a plain string like "SETTLEMENT" -- and Pydantic v2
+    strict mode's is_instance_of check on an Enum field rejects a plain
+    str unconditionally, even though NarrationType is itself a (str, Enum)
+    subclass. That's not a plausible-but-wrong LLM output; it's every
+    real response from every provider, always -- so this exhausted
+    retries and silently fell back to the deterministic default on every
+    single narration-classification call this schema was ever used for,
+    with nobody noticing until a real API key actually got exercised."""
+    text = (
+        '{"narration_type": "SETTLEMENT", "extracted_reference": "UTR123", '
+        '"confidence": 0.95, "suspicious": false, "reasoning": "test"}'
+    )
+    result = _parse_response(text, NarrationClassification)
+    assert result.narration_type == NarrationType.SETTLEMENT
+    assert isinstance(result.narration_type, NarrationType)
+
+
+def test_parse_response_raises_on_malformed_json():
+    with pytest.raises(Exception):
+        _parse_response("not valid json", NarrationClassification)
 
 
 class _FakeSchemaFailAdapter:

@@ -49,6 +49,24 @@ class NullAdapter:
         return None
 
 
+def _parse_response(text: str, schema: type[T]) -> T:
+    """Shared JSON-parse-and-validate step for every provider. Validates
+    with strict=False even though every schema in llm/schemas.py sets
+    strict=True in its own model_config -- that's the right default for
+    constructing these objects from already-typed Python values elsewhere,
+    but it's fundamentally incompatible with parsing real external JSON:
+    JSON has no enum type, so NarrationClassification.narration_type
+    always arrives as a plain string like "SETTLEMENT", and strict mode's
+    is_instance_of check on an Enum field rejects that unconditionally --
+    not a plausible-but-wrong value, every real provider response, always.
+    strict=False here restores the intended lax-JSON-input coercion
+    (string -> enum, string -> float, etc.) without touching the schema's
+    own strict=True, which still applies to any other construction path
+    (e.g. tests building one directly in Python)."""
+    data = json.loads(text)
+    return schema.model_validate(data, strict=False)
+
+
 class AnthropicAdapter:
     """Talks to the real Anthropic API. Requires the `anthropic` package
     and an API key; both are only ever needed here, never in core/."""
@@ -75,8 +93,7 @@ class AnthropicAdapter:
                     for block in response.content
                     if getattr(block, "type", None) == "text"
                 )
-                data = json.loads(text)
-                return schema.model_validate(data)
+                return _parse_response(text, schema)
             except (ValidationError, json.JSONDecodeError, KeyError, AttributeError) as exc:
                 last_error = exc
                 logger.warning(
@@ -115,10 +132,17 @@ class GeminiAdapter:
                         temperature=TEMPERATURE,
                         max_output_tokens=MAX_TOKENS,
                         response_mime_type="application/json",
+                        # Without this, gemini-3.5-flash spends its output
+                        # budget on internal reasoning before writing any
+                        # JSON -- confirmed live: 982 of MAX_TOKENS=1024
+                        # tokens went to thoughts_token_count, truncating
+                        # the actual response mid-string on a real query
+                        # over the full 45-exception demo run. These are
+                        # short structured-output tasks; they don't need it.
+                        thinking_config=types.ThinkingConfig(thinking_budget=0),
                     ),
                 )
-                data = json.loads(response.text)
-                return schema.model_validate(data)
+                return _parse_response(response.text, schema)
             except (
                 errors.APIError,
                 ValidationError,
