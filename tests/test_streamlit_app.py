@@ -20,8 +20,18 @@ def test_app_loads_without_exceptions(app: AppTest):
     assert not app.exception
 
 
-def test_app_has_five_tabs(app: AppTest):
-    assert len(app.tabs) == 5
+def test_app_has_six_tabs(app: AppTest):
+    assert len(app.tabs) == 6
+
+
+def test_home_tab_explains_scope_without_touching_pipeline_state(app: AppTest):
+    home_tab = app.tabs[0]
+    body_text = " ".join(m.value for m in home_tab.markdown) + " ".join(
+        c.value for c in home_tab.caption
+    )
+    assert "Upload" in body_text
+    assert "exception" in body_text.lower()
+    assert "dataset_id" not in app.session_state
 
 
 def test_load_demo_dataset_button_sets_session_state(app: AppTest):

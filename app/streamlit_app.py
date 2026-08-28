@@ -65,9 +65,59 @@ def _run_summary(run_id: str) -> dict | None:
 st.title("MANIFEST")
 st.caption("Settlement, tax-line, and exception auditor -- it tells you what it couldn't match.")
 
-upload_tab, run_tab, bridge_tab, manifest_tab, metrics_tab = st.tabs(
-    ["Upload", "Run", "Bridge", "Manifest", "Metrics"]
+home_tab, upload_tab, run_tab, bridge_tab, manifest_tab, metrics_tab = st.tabs(
+    ["Home", "Upload", "Run", "Bridge", "Manifest", "Metrics"]
 )
+
+# --------------------------------------------------------------------------
+# Tab 0: Home
+# --------------------------------------------------------------------------
+with home_tab:
+    st.subheader("What this does")
+    st.write(
+        "Every settlement cycle, some money doesn't line up cleanly across your "
+        "bank statement, your payment gateway's settlement batch, and your own "
+        "ledger -- a missing TDS deduction, a delayed settlement, an order that "
+        "only fuzzy-matches. MANIFEST finds every one of those mismatches, "
+        "explains each one in plain English, and never quietly waves one through "
+        "as a match just to make the numbers look clean."
+    )
+
+    st.write("")
+    step1, step2, step3 = st.columns(3)
+    with step1:
+        st.markdown("**1. Upload**")
+        st.caption(
+            "Bank statement, settlement batch, and internal ledger CSVs -- or "
+            "load the demo dataset in one click, no files needed."
+        )
+    with step2:
+        st.markdown("**2. Run**")
+        st.caption(
+            "A five-stage matching cascade runs deterministically: exact match, "
+            "bridge reconciliation, tax-line check, then fuzzy match as a last resort."
+        )
+    with step3:
+        st.markdown("**3. Review**")
+        st.caption(
+            "Every row lands in one of three buckets -- matched, needs review, or "
+            "exception -- and every exception comes with a reason, not just a red flag."
+        )
+
+    st.write("")
+    st.info(
+        "**The honest part:** a 100% match rate with zero exceptions is a "
+        "failure state here, not a success -- it would mean something got "
+        "matched wrong, not that nothing went wrong. MANIFEST's job is to tell "
+        "you exactly what it couldn't resolve, so a person makes that call, "
+        "not the tool."
+    )
+
+    st.write("")
+    st.caption(
+        "Start with the Upload tab above -- load the demo dataset for a "
+        "600-order example in under a minute."
+    )
 
 # --------------------------------------------------------------------------
 # Tab 1: Upload
