@@ -23,7 +23,6 @@ T = TypeVar("T", bound=BaseModel)
 TEMPERATURE = 0
 MAX_TOKENS = 1024
 PINNED_MODEL = "claude-sonnet-5"
-GEMINI_PINNED_MODEL = "gemini-3.5-flash"  # on Google AI Studio's free tier
 NVIDIA_PINNED_MODEL = "deepseek-ai/deepseek-v4-pro-0813"  # via NVIDIA's NIM endpoint
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 MAX_RETRIES = 1  # one retry maximum on schema failure, then give up
@@ -108,66 +107,11 @@ class AnthropicAdapter:
         return None
 
 
-class GeminiAdapter:
-    """Talks to the Google Gemini API. Free-tier friendly (see
-    GEMINI_PINNED_MODEL) -- a way to exercise every llm/ code path without
-    a paid Anthropic key. Requires the `google-genai` package and an API
-    key; both are only ever needed here, never in core/."""
-
-    def __init__(self, api_key: str, model: str = GEMINI_PINNED_MODEL):
-        from google import genai  # deferred: only llm/ needs this dependency at runtime
-
-        self._client = genai.Client(api_key=api_key)
-        self.model_string = model
-
-    def complete(self, system: str, user: str, schema: type[T]) -> T | None:
-        from google.genai import errors, types  # deferred, same reason as above
-
-        last_error: Exception | None = None
-        for attempt in range(MAX_RETRIES + 1):
-            try:
-                response = self._client.models.generate_content(
-                    model=self.model_string,
-                    contents=user,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system,
-                        temperature=TEMPERATURE,
-                        max_output_tokens=MAX_TOKENS,
-                        response_mime_type="application/json",
-                        # Without this, gemini-3.5-flash spends its output
-                        # budget on internal reasoning before writing any
-                        # JSON -- confirmed live: 982 of MAX_TOKENS=1024
-                        # tokens went to thoughts_token_count, truncating
-                        # the actual response mid-string on a real query
-                        # over the full 45-exception demo run. These are
-                        # short structured-output tasks; they don't need it.
-                        thinking_config=types.ThinkingConfig(thinking_budget=0),
-                    ),
-                )
-                return _parse_response(response.text, schema)
-            except (
-                errors.APIError,
-                ValidationError,
-                json.JSONDecodeError,
-                KeyError,
-                AttributeError,
-            ) as exc:
-                last_error = exc
-                logger.warning(
-                    "Gemini completion failed schema validation (attempt %d/%d): %s",
-                    attempt + 1,
-                    MAX_RETRIES + 1,
-                    exc,
-                )
-        logger.error("Gemini completion exhausted retries, falling back: %s", last_error)
-        return None
-
-
 class NvidiaAdapter:
     """Talks to a DeepSeek model hosted on NVIDIA's NIM endpoint
     (integrate.api.nvidia.com), which is OpenAI-API-compatible -- so this
     uses the `openai` package with a custom base_url rather than a
-    NVIDIA-specific SDK. A third free-tier option alongside GeminiAdapter.
+    NVIDIA-specific SDK. A free-tier fallback alongside AnthropicAdapter.
     Requires the `openai` package and an API key; both are only ever
     needed here, never in core/."""
 
@@ -193,12 +137,10 @@ class NvidiaAdapter:
                     max_tokens=MAX_TOKENS,
                     response_format={"type": "json_object"},
                     seed=42,
-                    # Same class of bug as Gemini's thinking_budget (see
-                    # GeminiAdapter above): without this, a reasoning-capable
-                    # DeepSeek variant can spend the output budget on
-                    # chain-of-thought before writing any JSON. Disabled for
-                    # the same reason -- these are short structured-output
-                    # tasks, not reasoning tasks.
+                    # Without this, a reasoning-capable DeepSeek variant can
+                    # spend the output budget on chain-of-thought before
+                    # writing any JSON, truncating the response -- these are
+                    # short structured-output tasks, not reasoning tasks.
                     extra_body={"chat_template_kwargs": {"thinking": False}},
                 )
                 text = response.choices[0].message.content
@@ -234,17 +176,17 @@ def build_adapter_from_env() -> LLMAdapter:
     caller (backend/services/reconcile_service.py, app/streamlit_app.py,
     evaluation/ablation.py) shares one policy instead of each hardcoding
     "read ANTHROPIC_API_KEY" itself. Checked in order: ANTHROPIC_API_KEY
-    (the primary, most-tested path) -> GEMINI_API_KEY -> NVIDIA_API_KEY
-    (two free-tier fallbacks for testing without a paid key -- Gemini's
-    free tier caps gemini-3.5-flash at 20 requests/day/project, confirmed
-    live and easy to exhaust) -> NullAdapter, same graceful degradation
-    as build_adapter()."""
+    (the primary, most-tested path) -> NVIDIA_API_KEY (a free-tier
+    fallback for testing without a paid key) -> NullAdapter, same graceful
+    degradation as build_adapter().
+
+    GeminiAdapter was removed: gemini-3.5-flash's free tier caps out at
+    20 requests/day/project, confirmed live and trivially exhausted by a
+    single `make eval` run -- unreliable enough in practice that it caused
+    more problems than the free access was worth."""
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if anthropic_key:
         return AnthropicAdapter(api_key=anthropic_key)
-    gemini_key = os.environ.get("GEMINI_API_KEY")
-    if gemini_key:
-        return GeminiAdapter(api_key=gemini_key)
     nvidia_key = os.environ.get("NVIDIA_API_KEY")
     if nvidia_key:
         return NvidiaAdapter(api_key=nvidia_key)
