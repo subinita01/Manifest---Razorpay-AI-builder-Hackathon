@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 import backend.db as db_module
@@ -11,6 +12,16 @@ APP_PATH = str(Path(__file__).resolve().parent.parent / "app" / "streamlit_app.p
 @pytest.fixture()
 def app(tmp_path, monkeypatch):
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "test.duckdb")
+    # get_db_connection() is @st.cache_resource -- that cache is a single,
+    # process-global dict, not scoped to one AppTest instance. Without
+    # clearing it here, only the first test in the whole file to ever call
+    # it actually gets its own tmp_path's database; every later test's app
+    # silently keeps reusing that first test's connection/file instead of
+    # its own, freshly monkeypatched DEFAULT_DB_PATH -- confirmed live: a
+    # test opening its own db_module.get_connection() (bypassing the cache)
+    # found the run_id the app had just created nowhere, because the app
+    # had actually written it to an earlier test's file.
+    st.cache_resource.clear()
     at = AppTest.from_file(APP_PATH, default_timeout=30)
     at.run()
     return at
@@ -133,6 +144,39 @@ def test_ask_about_this_run_falls_back_without_an_api_key(app: AppTest, monkeypa
     caption_text = " ".join(c.value for c in at.caption)
     assert "no ANTHROPIC_API_KEY, GEMINI_API_KEY, or NVIDIA_API_KEY set" in caption_text
     assert "Answered by:" not in caption_text
+
+
+def test_ask_about_this_run_renders_cited_exception_details_inline(app: AppTest, monkeypatch):
+    """Regression test: the answer used to cite an exception_id as bare text
+    with no way to see that exception's actual detail -- a dead-end citation
+    unless the user went and found it themselves in the filtered list below
+    (which the taxonomy/severity filters could even be hiding it from)."""
+    at = _run_demo(app)
+    run_id = at.session_state["run_id"]
+    conn = db_module.get_connection()
+    cited = db_module.get_exceptions(conn, run_id)[0]
+    cited_id = cited["exception_id"]
+
+    import llm.query as query_module
+    from llm.schemas import QueryAnswer
+
+    def fake_answer_question(adapter, question, exceptions):
+        return QueryAnswer(answer="Mock answer.", cited_exception_ids=[cited_id])
+
+    monkeypatch.setattr(query_module, "answer_question", fake_answer_question)
+
+    question_input = next(
+        t for t in at.text_input if t.label == "Ask a question about these exceptions"
+    )
+    at = question_input.set_value(f"Why is {cited_id} an exception?").run()
+    ask_button = next(b for b in at.button if b.label == "Ask")
+    at = ask_button.click().run()
+    assert not at.exception
+
+    cited_expanders = [e for e in at.expander if e.label.startswith(f"Cited: {cited_id}")]
+    assert len(cited_expanders) == 1
+    row_id_text = " ".join(m.value for m in cited_expanders[0].markdown)
+    assert cited["row_ids"][0] in row_id_text
 
 
 def test_upload_tab_offers_sample_csvs_to_download(app: AppTest):

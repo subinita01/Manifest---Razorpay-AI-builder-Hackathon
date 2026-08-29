@@ -62,6 +62,34 @@ def _run_summary(run_id: str) -> dict | None:
     return db.get_run(get_db_connection(), run_id)
 
 
+def _exception_label(exc: dict) -> str:
+    return (
+        f"{exc['severity']:<8} {exc['taxonomy_code']:<28} "
+        f"Rs {format_money(exc['amount_impact'])}"
+    )
+
+
+def _render_exception_body(exc: dict) -> None:
+    st.markdown(f"**Row IDs:** `{', '.join(exc['row_ids'])}`")
+    st.markdown("**Detail:**")
+    detail = dict(exc["detail"])
+    llm_root_cause = detail.pop("llm_root_cause", None)
+    llm_adjustment = detail.pop("llm_adjustment_draft", None)
+    llm_narration = detail.pop("llm_narration_classification", None)
+    st.json(detail)
+
+    if llm_narration:
+        st.markdown("**LLM narration classification:**")
+        st.json(llm_narration)
+    if llm_root_cause:
+        st.markdown("**Root-cause narrative:**")
+        st.write(llm_root_cause.get("explanation", ""))
+        st.caption(f"Suggested action: {llm_root_cause.get('suggested_action', '')}")
+    if llm_adjustment:
+        st.markdown("**Draft adjustment entry:**")
+        st.json(llm_adjustment)
+
+
 st.title("MANIFEST")
 st.caption("Settlement, tax-line, and exception auditor -- it tells you what it couldn't match.")
 
@@ -431,6 +459,18 @@ with manifest_tab:
                 st.info(result.answer)
                 if result.cited_exception_ids:
                     st.caption(f"Based on: {', '.join(result.cited_exception_ids)}")
+                    # Look these up in the full, unfiltered run -- the taxonomy/
+                    # severity filters below could otherwise hide the very rows
+                    # the answer is citing, leaving the citation as a dead-end
+                    # ID with nothing to actually look at.
+                    exceptions_by_id = {e["exception_id"]: e for e in exceptions}
+                    for cid in result.cited_exception_ids:
+                        cited = exceptions_by_id.get(cid)
+                        if cited is None:
+                            continue
+                        title = f"Cited: {cid} -- {_exception_label(cited)}"
+                        with st.expander(title, expanded=True):
+                            _render_exception_body(cited)
                 # adapter.model_string only reflects whether a key was found at
                 # construction time -- it stays "gemini-3.5-flash" even when the
                 # live completion call itself failed and answer_question() fell
@@ -473,31 +513,8 @@ with manifest_tab:
             filtered.sort(key=lambda e: (severity_order.get(e["severity"], 9), e["taxonomy_code"]))
 
             for exc in filtered:
-                label = (
-                    f"{exc['severity']:<8} {exc['taxonomy_code']:<28} "
-                    f"Rs {format_money(exc['amount_impact'])}"
-                )
-                with st.expander(label):
-                    st.markdown(f"**Row IDs:** `{', '.join(exc['row_ids'])}`")
-                    st.markdown("**Detail:**")
-                    detail = dict(exc["detail"])
-                    llm_root_cause = detail.pop("llm_root_cause", None)
-                    llm_adjustment = detail.pop("llm_adjustment_draft", None)
-                    llm_narration = detail.pop("llm_narration_classification", None)
-                    st.json(detail)
-
-                    if llm_narration:
-                        st.markdown("**LLM narration classification:**")
-                        st.json(llm_narration)
-                    if llm_root_cause:
-                        st.markdown("**Root-cause narrative:**")
-                        st.write(llm_root_cause.get("explanation", ""))
-                        st.caption(
-                            f"Suggested action: {llm_root_cause.get('suggested_action', '')}"
-                        )
-                    if llm_adjustment:
-                        st.markdown("**Draft adjustment entry:**")
-                        st.json(llm_adjustment)
+                with st.expander(_exception_label(exc)):
+                    _render_exception_body(exc)
 
             csv_text = exceptions_to_csv(filtered)
             st.download_button(
