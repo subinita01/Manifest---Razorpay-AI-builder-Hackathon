@@ -160,7 +160,7 @@ def run_cumulative_ablation() -> str:
     )
     if adapter.model_string == "none":
         key_note = (
-            "no ANTHROPIC_API_KEY, GEMINI_API_KEY, or NVIDIA_API_KEY was set, so this used "
+            "no ANTHROPIC_API_KEY or NVIDIA_API_KEY was set, so this used "
             "the deterministic NullAdapter fallback"
         )
     else:
