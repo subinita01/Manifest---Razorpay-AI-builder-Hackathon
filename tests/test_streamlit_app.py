@@ -217,6 +217,18 @@ def test_upload_tab_offers_sample_csvs_to_download(app: AppTest):
         assert (sample_dir / filename).stat().st_size > 0
 
 
+def test_upload_tab_previews_demo_and_sample_datasets(app: AppTest):
+    popovers = {p.proto.popover.label: p for p in app.tabs[1].get("popover")}
+    assert {"Preview demo dataset", "Preview sample dataset"} <= popovers.keys()
+    for label in ("Preview demo dataset", "Preview sample dataset"):
+        headers = {m.value for m in popovers[label].markdown}
+        assert headers == {"**Bank statement**", "**Settlement batch**", "**Internal ledger**"}
+        dataframes = popovers[label].dataframe
+        assert len(dataframes) == 3
+        for df_node in dataframes:
+            assert len(df_node.value) == 5  # PREVIEW_ROWS
+
+
 def test_metrics_tab_renders_ablation_table_and_unexplained_card(app: AppTest):
     at = _run_demo(app)
     assert not at.exception

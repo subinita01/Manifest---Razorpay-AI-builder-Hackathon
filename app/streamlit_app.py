@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import pandas as pd  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
@@ -39,6 +40,7 @@ from backend.security import (  # noqa: E402
     stream_upload_to_file_sync,
 )
 from backend.services.reconcile_service import (  # noqa: E402
+    DEMO_DIR,
     DatasetNotFound,
     reconcile,
     resolve_dataset_dir,
@@ -88,6 +90,29 @@ def _render_exception_body(exc: dict) -> None:
     if llm_adjustment:
         st.markdown("**Draft adjustment entry:**")
         st.json(llm_adjustment)
+
+
+PREVIEW_ROWS = 5
+
+
+def _render_csv_preview(display_name: str, df: pd.DataFrame) -> None:
+    st.markdown(f"**{display_name}**")
+    st.dataframe(df, width="stretch", hide_index=True)
+
+
+def _render_dataset_preview_from_paths(paths: dict[str, Path]) -> None:
+    st.caption(f"First {PREVIEW_ROWS} rows of each file.")
+    for display_name, path in paths.items():
+        _render_csv_preview(display_name, pd.read_csv(path, nrows=PREVIEW_ROWS))
+
+
+def _render_dataset_preview_from_uploads(uploads: dict[str, object]) -> None:
+    st.caption(f"First {PREVIEW_ROWS} rows of each file.")
+    for display_name, upload in uploads.items():
+        upload.seek(0)
+        df = pd.read_csv(upload, nrows=PREVIEW_ROWS)
+        upload.seek(0)  # rewind -- the actual upload/validation pass still needs to read this
+        _render_csv_preview(display_name, df)
 
 
 def _render_step_progress() -> None:
@@ -194,12 +219,21 @@ with home_tab:
 with upload_tab:
     st.subheader("Load a dataset")
 
-    demo_col, _ = st.columns([1, 2])
+    demo_col, preview_col, _ = st.columns([1, 1, 1])
     with demo_col:
         if st.button("Load demo dataset", type="primary", width="stretch"):
             st.session_state["dataset_id"] = "demo"
             st.session_state.pop("run_id", None)
             st.success("Demo dataset selected (seed 42, 600 orders). Go to the Run tab.")
+    with preview_col:
+        with st.popover("Preview demo dataset", width="stretch"):
+            _render_dataset_preview_from_paths(
+                {
+                    "Bank statement": DEMO_DIR / "bank_statement.csv",
+                    "Settlement batch": DEMO_DIR / "settlement_batch.csv",
+                    "Internal ledger": DEMO_DIR / "internal_ledger.csv",
+                }
+            )
 
     st.divider()
     st.write("Or upload your own bank statement, settlement batch, and internal ledger CSVs:")
@@ -211,11 +245,16 @@ with upload_tab:
             "upload form specifically."
         )
         sample_dir = ROOT / "data" / "sample_upload"
+        sample_paths = {
+            "Bank statement": sample_dir / "bank_statement.csv",
+            "Settlement batch": sample_dir / "settlement_batch.csv",
+            "Internal ledger": sample_dir / "internal_ledger.csv",
+        }
         dl1, dl2, dl3 = st.columns(3)
         for col, filename, label in zip(
             (dl1, dl2, dl3),
             ("bank_statement.csv", "settlement_batch.csv", "internal_ledger.csv"),
-            ("Bank statement", "Settlement batch", "Internal ledger"),
+            sample_paths.keys(),
         ):
             with col:
                 st.download_button(
@@ -225,6 +264,8 @@ with upload_tab:
                     mime="text/csv",
                     width="stretch",
                 )
+        with st.popover("Preview sample dataset"):
+            _render_dataset_preview_from_paths(sample_paths)
 
     bank_file = st.file_uploader("Bank statement CSV", type=["csv"], key="bank_upload")
     settlement_file = st.file_uploader(
@@ -233,6 +274,14 @@ with upload_tab:
     ledger_file = st.file_uploader("Internal ledger CSV", type=["csv"], key="ledger_upload")
 
     if bank_file and settlement_file and ledger_file:
+        with st.popover("Preview your files"):
+            _render_dataset_preview_from_uploads(
+                {
+                    "Bank statement": bank_file,
+                    "Settlement batch": settlement_file,
+                    "Internal ledger": ledger_file,
+                }
+            )
         if st.button("Validate and use these files"):
             dataset_id = new_dataset_id()
             target_dir = dataset_dir(dataset_id)
