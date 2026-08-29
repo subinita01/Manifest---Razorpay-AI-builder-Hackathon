@@ -135,6 +135,28 @@ with upload_tab:
     st.divider()
     st.write("Or upload your own bank statement, settlement batch, and internal ledger CSVs:")
 
+    with st.expander("Don't have files handy? Download sample CSVs to try the upload flow"):
+        st.caption(
+            "A second, independently generated dataset (seed 7, 600 orders) -- "
+            "distinct from the one-click demo above, meant for exercising this "
+            "upload form specifically."
+        )
+        sample_dir = ROOT / "data" / "sample_upload"
+        dl1, dl2, dl3 = st.columns(3)
+        for col, filename, label in zip(
+            (dl1, dl2, dl3),
+            ("bank_statement.csv", "settlement_batch.csv", "internal_ledger.csv"),
+            ("Bank statement", "Settlement batch", "Internal ledger"),
+        ):
+            with col:
+                st.download_button(
+                    label,
+                    data=(sample_dir / filename).read_bytes(),
+                    file_name=filename,
+                    mime="text/csv",
+                    width="stretch",
+                )
+
     bank_file = st.file_uploader("Bank statement CSV", type=["csv"], key="bank_upload")
     settlement_file = st.file_uploader(
         "Settlement batch CSV", type=["csv"], key="settlement_upload"

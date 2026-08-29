@@ -135,6 +135,17 @@ def test_ask_about_this_run_falls_back_without_an_api_key(app: AppTest, monkeypa
     assert "Answered by:" not in caption_text
 
 
+def test_upload_tab_offers_sample_csvs_to_download(app: AppTest):
+    downloads = {d.label: d for d in app.tabs[1].get("download_button")}
+    assert {"Bank statement", "Settlement batch", "Internal ledger"} <= downloads.keys()
+    for label in ("Bank statement", "Settlement batch", "Internal ledger"):
+        assert not downloads[label].disabled
+
+    sample_dir = Path(__file__).resolve().parent.parent / "data" / "sample_upload"
+    for filename in ("bank_statement.csv", "settlement_batch.csv", "internal_ledger.csv"):
+        assert (sample_dir / filename).stat().st_size > 0
+
+
 def test_metrics_tab_renders_ablation_table_and_unexplained_card(app: AppTest):
     at = _run_demo(app)
     assert not at.exception
