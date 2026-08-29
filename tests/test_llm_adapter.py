@@ -1,7 +1,6 @@
 import pytest
 
 from llm.adapter import (
-    GeminiAdapter,
     NullAdapter,
     NvidiaAdapter,
     _parse_response,
@@ -32,19 +31,13 @@ def test_build_adapter_returns_anthropic_adapter_with_a_key():
     assert adapter.model_string == "claude-sonnet-5"
 
 
-def test_build_adapter_returns_gemini_adapter_with_a_key():
-    adapter = GeminiAdapter(api_key="fake-key-for-construction-only")
-    assert adapter.model_string == "gemini-3.5-flash"
-
-
 def test_build_adapter_returns_nvidia_adapter_with_a_key():
     adapter = NvidiaAdapter(api_key="fake-key-for-construction-only")
     assert adapter.model_string == "deepseek-ai/deepseek-v4-pro-0813"
 
 
-def test_build_adapter_from_env_prefers_anthropic_over_gemini_and_nvidia(monkeypatch):
+def test_build_adapter_from_env_prefers_anthropic_over_nvidia(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-anthropic-key")
-    monkeypatch.setenv("GEMINI_API_KEY", "fake-gemini-key")
     monkeypatch.setenv("NVIDIA_API_KEY", "fake-nvidia-key")
     from llm.adapter import AnthropicAdapter
 
@@ -52,18 +45,8 @@ def test_build_adapter_from_env_prefers_anthropic_over_gemini_and_nvidia(monkeyp
     assert isinstance(adapter, AnthropicAdapter)
 
 
-def test_build_adapter_from_env_prefers_gemini_over_nvidia(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setenv("GEMINI_API_KEY", "fake-gemini-key")
-    monkeypatch.setenv("NVIDIA_API_KEY", "fake-nvidia-key")
-
-    adapter = build_adapter_from_env()
-    assert isinstance(adapter, GeminiAdapter)
-
-
 def test_build_adapter_from_env_falls_back_to_nvidia(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "fake-nvidia-key")
 
     adapter = build_adapter_from_env()
@@ -72,7 +55,6 @@ def test_build_adapter_from_env_falls_back_to_nvidia(monkeypatch):
 
 def test_build_adapter_from_env_returns_null_adapter_with_no_keys(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
 
     adapter = build_adapter_from_env()
@@ -81,8 +63,8 @@ def test_build_adapter_from_env_returns_null_adapter_with_no_keys(monkeypatch):
 
 def test_parse_response_coerces_a_real_provider_json_enum_string():
     """Regression test for a real bug caught by the first-ever live LLM
-    call in this project (via GeminiAdapter, no key had been available
-    before): NarrationClassification sets strict=True in its own
+    call in this project (via the since-removed GeminiAdapter, no key had
+    been available before): NarrationClassification sets strict=True in its own
     model_config, and every schema.model_validate(data) call used to
     validate under that config. JSON has no enum type, so narration_type
     always arrives as a plain string like "SETTLEMENT" -- and Pydantic v2
