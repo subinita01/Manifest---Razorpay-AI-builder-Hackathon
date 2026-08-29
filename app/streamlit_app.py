@@ -472,14 +472,14 @@ with manifest_tab:
                         with st.expander(title, expanded=True):
                             _render_exception_body(cited)
                 # adapter.model_string only reflects whether a key was found at
-                # construction time -- it stays "gemini-3.5-flash" even when the
+                # construction time -- it stays a real model name even when the
                 # live completion call itself failed and answer_question() fell
                 # back, which would otherwise show the misleading combination of
-                # a fallback answer captioned "Answered by: gemini-3.5-flash".
-                # Compare against the actual fallback text instead.
+                # a fallback answer captioned "Answered by: <model>". Compare
+                # against the actual fallback text instead.
                 if result.answer == fallback_answer().answer:
                     reason = (
-                        "no ANTHROPIC_API_KEY, GEMINI_API_KEY, or NVIDIA_API_KEY set"
+                        "no ANTHROPIC_API_KEY or NVIDIA_API_KEY set"
                         if adapter.model_string == "none"
                         else f"a key was found ({adapter.model_string}) but the live request failed"
                     )
