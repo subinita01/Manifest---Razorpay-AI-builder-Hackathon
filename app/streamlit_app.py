@@ -90,8 +90,49 @@ def _render_exception_body(exc: dict) -> None:
         st.json(llm_adjustment)
 
 
+def _render_step_progress() -> None:
+    """A persistent strip showing where the user is in the core Upload ->
+    Run -> Review journey -- not a separate wizard flow, just visual
+    guidance layered on top of the existing free-roaming tabs (a user
+    can still jump to any tab directly; this never blocks that).
+
+    Rendered into a placeholder reserved right under the header, but the
+    call itself happens at the very bottom of the script (see PROGRESS_
+    PLACEHOLDER below) -- session_state mutations from a button click
+    (e.g. "Load demo dataset") happen inside tab bodies, which execute
+    *after* this point in a top-to-bottom script. Computing this here
+    and rendering it there means it always reflects this run's final
+    state instead of lagging one click behind, with no extra rerun."""
+    steps = ["Upload", "Run", "Review"]
+    if st.session_state.get("run_id"):
+        current = 2
+    elif st.session_state.get("dataset_id"):
+        current = 1
+    else:
+        current = 0
+
+    with st.container(border=True):
+        labels = []
+        for i, name in enumerate(steps):
+            if i < current:
+                labels.append(f"✓ {name}")
+            elif i == current:
+                labels.append(f"**→ {name}**")
+            else:
+                labels.append(name)
+        st.markdown("&nbsp;&nbsp;/&nbsp;&nbsp;".join(labels))
+        st.progress(current / (len(steps) - 1))
+        remaining = len(steps) - 1 - current
+        if remaining > 0:
+            noun = "step" if remaining == 1 else "steps"
+            st.caption(f"Step {current + 1} of {len(steps)} -- {remaining} {noun} to go.")
+        else:
+            st.caption(f"Step {current + 1} of {len(steps)} -- you're at the last step.")
+
+
 st.title("MANIFEST")
 st.caption("Settlement, tax-line, and exception auditor -- it tells you what it couldn't match.")
+PROGRESS_PLACEHOLDER = st.empty()
 
 home_tab, upload_tab, run_tab, bridge_tab, manifest_tab, metrics_tab = st.tabs(
     ["Home", "Upload", "Run", "Bridge", "Manifest", "Metrics"]
@@ -633,3 +674,7 @@ if st.button("Verify audit chain"):
         st.success("Audit chain verified: every record's hash and prev_hash link checks out.")
     else:
         st.error("Audit chain verification FAILED -- a record has been tampered with or removed.")
+
+
+with PROGRESS_PLACEHOLDER.container():
+    _render_step_progress()

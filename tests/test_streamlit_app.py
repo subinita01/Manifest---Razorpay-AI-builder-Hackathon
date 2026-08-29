@@ -45,6 +45,34 @@ def test_home_tab_explains_scope_without_touching_pipeline_state(app: AppTest):
     assert "dataset_id" not in app.session_state
 
 
+def test_step_progress_advances_through_upload_run_review(app: AppTest):
+    """Regression test: the tracker used to be rendered before the tab
+    bodies that mutate dataset_id/run_id, so it always lagged one click
+    behind the state it claimed to show -- e.g. right after "Load demo
+    dataset" it kept saying "Step 1" even though the dataset was already
+    loaded. Deferred rendering (see PROGRESS_PLACEHOLDER in the app) fixes
+    that; these assertions check the state is correct on the very same
+    click's rerun, not one click later."""
+
+    def step_caption(at: AppTest) -> str:
+        return next(c.value for c in at.caption if c.value.startswith("Step "))
+
+    # st.progress's proto stores a 0-100 int percentage, not the 0.0-1.0
+    # float passed to st.progress().
+    assert step_caption(app) == "Step 1 of 3 -- 2 steps to go."
+    assert next(p.value for p in app.get("progress")) == 0
+
+    demo_button = next(b for b in app.button if b.label == "Load demo dataset")
+    at = demo_button.click().run()
+    assert step_caption(at) == "Step 2 of 3 -- 1 step to go."
+    assert next(p.value for p in at.get("progress")) == 50
+
+    run_button = next(b for b in at.button if b.label == "Run reconciliation")
+    at = run_button.click().run()
+    assert step_caption(at) == "Step 3 of 3 -- you're at the last step."
+    assert next(p.value for p in at.get("progress")) == 100
+
+
 def test_load_demo_dataset_button_sets_session_state(app: AppTest):
     demo_button = next(b for b in app.button if b.label == "Load demo dataset")
     demo_button.click().run()
