@@ -123,7 +123,6 @@ def test_footer_shows_run_manifest_and_verify_chain_button(app: AppTest):
 
 def test_ask_about_this_run_falls_back_without_an_api_key(app: AppTest, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     at = _run_demo(app)
     assert not at.exception
@@ -142,7 +141,7 @@ def test_ask_about_this_run_falls_back_without_an_api_key(app: AppTest, monkeypa
     assert "No LLM available" in info_text
 
     caption_text = " ".join(c.value for c in at.caption)
-    assert "no ANTHROPIC_API_KEY, GEMINI_API_KEY, or NVIDIA_API_KEY set" in caption_text
+    assert "no ANTHROPIC_API_KEY or NVIDIA_API_KEY set" in caption_text
     assert "Answered by:" not in caption_text
 
 

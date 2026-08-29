@@ -64,14 +64,13 @@ def test_reconcile_honours_explicit_idempotency_key_header(tmp_path: Path):
 
 
 def test_reconcile_with_use_llm_true_produces_the_same_core_decision(tmp_path: Path, monkeypatch):
-    """No API key (Anthropic, Gemini, or NVIDIA) is set in this
-    environment, so use_llm=True exercises the real NullAdapter fallback
-    path end to end -- and the resulting match/exception counts must be
-    identical to use_llm=False, proving the LLM flag genuinely cannot
-    influence the pipeline's own decision (see tests/test_prompt_injection.py
-    for the adversarial-adapter version of this same guarantee)."""
+    """No API key (Anthropic or NVIDIA) is set in this environment, so
+    use_llm=True exercises the real NullAdapter fallback path end to end --
+    and the resulting match/exception counts must be identical to
+    use_llm=False, proving the LLM flag genuinely cannot influence the
+    pipeline's own decision (see tests/test_prompt_injection.py for the
+    adversarial-adapter version of this same guarantee)."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
 
     conn_a = get_connection(tmp_path / "a.duckdb")
