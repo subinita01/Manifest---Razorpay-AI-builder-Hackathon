@@ -54,6 +54,7 @@ async def ingest(
     bank_statement: UploadFile = File(...),
     settlement_batch: UploadFile = File(...),
     internal_ledger: UploadFile = File(...),
+    caller: str = Depends(require_api_key),
 ) -> IngestResponse:
     dataset_id = new_dataset_id()
     target_dir = dataset_dir(dataset_id)
@@ -86,7 +87,7 @@ async def ingest(
         validation[key] = {"size_bytes": size, "rows": rows}
 
     audit_log.get_audit_logger().append(
-        {"event": "ingest", "dataset_id": dataset_id, "validation": validation}
+        {"event": "ingest", "dataset_id": dataset_id, "validation": validation, "caller": caller}
     )
     return IngestResponse(dataset_id=dataset_id, status="validated", validation=validation)
 
@@ -97,6 +98,7 @@ def do_reconcile(
     request: Request,  # required by slowapi's limiter to key on the client IP
     payload: ReconcileRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    caller: str = Depends(require_api_key),
 ) -> RunStatusResponse:
     conn = db.get_connection()
     try:
@@ -114,7 +116,12 @@ def do_reconcile(
 
     stored = db.get_run(conn, run_id)
     audit_log.get_audit_logger().append(
-        {"event": "reconcile", "run_id": run_id, "dataset_id": payload.dataset_id}
+        {
+            "event": "reconcile",
+            "run_id": run_id,
+            "dataset_id": payload.dataset_id,
+            "caller": caller,
+        }
     )
     return RunStatusResponse(
         run_id=run_id,

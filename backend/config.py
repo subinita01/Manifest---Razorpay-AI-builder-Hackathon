@@ -22,8 +22,23 @@ class Settings(BaseSettings):
     log_json: bool = True
 
     @property
+    def api_key_labels(self) -> dict[str, str]:
+        """Maps each configured key to a caller label, so the audit log can
+        record who called an endpoint, not just what happened. Entries are
+        "label:key" pairs; a bare entry with no ":" is its own label, for
+        backward compatibility with configs written before labels existed."""
+        labels: dict[str, str] = {}
+        for entry in self.api_keys.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            label, _, key = entry.partition(":")
+            labels[key or label] = label
+        return labels
+
+    @property
     def api_key_set(self) -> frozenset[str]:
-        return frozenset(k.strip() for k in self.api_keys.split(",") if k.strip())
+        return frozenset(self.api_key_labels.keys())
 
     @property
     def cors_origin_list(self) -> list[str]:
