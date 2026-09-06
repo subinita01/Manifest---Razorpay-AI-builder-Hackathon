@@ -11,6 +11,17 @@ def test_healthz(client: TestClient):
     assert response.json() == {"status": "ok", "service": "manifest"}
 
 
+def test_healthz_returns_503_when_the_database_is_unreachable(client: TestClient, monkeypatch):
+    import backend.db as db_module
+
+    def _broken_connection(*args, **kwargs):
+        raise RuntimeError("simulated database outage")
+
+    monkeypatch.setattr(db_module, "get_connection", _broken_connection)
+    response = client.get("/healthz")
+    assert response.status_code == 503
+
+
 def test_reconcile_and_run_lifecycle_against_demo_dataset(client: TestClient):
     response = client.post("/reconcile", json={"dataset_id": "demo", "use_llm": False})
     assert response.status_code == 200

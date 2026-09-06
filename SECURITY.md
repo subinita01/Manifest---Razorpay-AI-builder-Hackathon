@@ -14,7 +14,8 @@ the control exists. `pytest tests/test_security.py` runs the attack suite;
 | T-CSV | CSV formula injection: a narration or export field starting with `=`, `+`, `-`, `@`, tab, or CR opens as a live formula in Excel | `core.normalize.sanitize_cell` prefixes a leading `'` on ingest (`core/ingest.py:load_bank_csv`) and again on export (`backend/export.py:exceptions_to_csv`, recursing into nested `detail` dicts so a payload buried inside a JSON-shaped field is also caught) | `test_csv_formula_injection_payload_is_neutralised_on_export` (tests/test_security.py); `test_sanitize_cell_neutralises_formula_injection_payload` (tests/test_normalize.py); `test_exceptions_to_csv_neutralises_formula_injection_in_every_text_field` (tests/test_export.py) |
 | T8 | Information disclosure via a leaked traceback or internal exception message on an unhandled error | A global handler (`backend/main.py:unhandled_exception_handler`) returns only `{"error": "internal_error", "correlation_id": ...}`; the traceback is logged server-side only, keyed by the same correlation_id. Because a plain `@app.middleware("http")` function is a `BaseHTTPMiddleware` under the hood, and Starlette does not reliably route an exception raised downstream of one to a generic `@app.exception_handler(Exception)`, the middleware also wraps `call_next` in its own try/except using the same formatter -- both paths are covered. | `test_t8_internal_error_never_leaks_a_traceback` (tests/test_security.py) |
 | T-RATE | Abuse via rapid repeated `/reconcile` calls (each one runs the full matching cascade) | `slowapi` rate limiting, 10/minute on `/reconcile`, keyed by client IP | `test_rate_limiting_blocks_the_11th_rapid_reconcile_request` (tests/test_security.py) |
-| T-CORS | A malicious origin driving the API from a browser | `CORSMiddleware` allows only `http://localhost:8501` (the Streamlit dev origin) -- never a wildcard | manual: `curl -H "Origin: http://evil.example" -I http://localhost:8000/healthz` shows no `Access-Control-Allow-Origin` for that origin |
+| T-AUTH | Unauthenticated access to any endpoint that reads or runs a reconciliation | Every route except `/healthz` requires a valid `X-API-Key` header, checked against `MANIFEST_API_KEYS` (`backend/auth.py:require_api_key`). Fail-closed: an unset `MANIFEST_API_KEYS` denies every protected request rather than defaulting to open. | `tests/test_auth.py` -- missing key, wrong key, and the fail-closed no-keys-configured case all assert 401; correct key asserts 200 |
+| T-CORS | A malicious origin driving the API from a browser | `CORSMiddleware` allows only the origins in `MANIFEST_CORS_ORIGINS` (`backend/config.py`, defaults to `http://localhost:8501`) -- never a wildcard | manual: `curl -H "Origin: http://evil.example" -I http://localhost:8000/healthz` shows no `Access-Control-Allow-Origin` for that origin |
 | T-HEADERS | MIME-sniffing and clickjacking | Every response carries `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY` (`backend/main.py` middleware) | covered implicitly by every `tests/test_api.py` request going through the same middleware; no dedicated header-content test yet |
 | T-VALIDATE | Malformed or type-confused request bodies (e.g. a float where a str is required, extra unexpected fields) | Every request body is a `ConfigDict(strict=True, extra="forbid")` Pydantic model (`backend/schemas.py`) | FastAPI/Pydantic reject non-conforming bodies with 422 automatically; exercised incidentally by every `tests/test_api.py` call using well-formed bodies |
 | T-SQLI | SQL/DuckDB injection via a crafted run_id, dataset_id, or other identifier reaching a query | Every `backend/db.py` query uses parameterized placeholders (`?`) -- no f-string or `.format()` builds a query from user input | covered implicitly: `test_run_unknown_id_returns_404`, `test_bridge_for_a_matched_settlement` etc. pass arbitrary-looking identifiers straight through to `db.py` without incident |
@@ -23,16 +24,24 @@ the control exists. `pytest tests/test_security.py` runs the attack suite;
 
 ## Non-goals (for now)
 
-- **Authentication/authorization**: every endpoint is open. This is a
-  hackathon demo API, not a multi-tenant production service; adding auth
-  without a real user model would be security theatre.
+- **Multi-tenant user accounts / RBAC**: `MANIFEST_API_KEYS` (T-AUTH above)
+  is simple shared-secret API-key auth, not a user model -- every valid key
+  has identical access to every endpoint. Fine for a single backend client;
+  not a substitute for real per-user authorization if this ever serves
+  multiple untrusted clients directly.
 - **TLS termination**: assumed to be handled by whatever reverse proxy
-  fronts this in a real deployment; the app itself runs plain HTTP for the
-  demo.
-- **Secrets management**: `core/` never reads environment variables for
-  secrets (CLAUDE.md rule 2); the LLM layer (Day 9) will read an API key
-  from `.env` (gitignored), which is adequate for a demo but not a
-  production secrets story.
+  fronts this in a real deployment; the app itself runs plain HTTP.
+- **A production secrets manager**: `backend/config.py` centralizes which
+  env vars the API layer reads, but they're still plain environment
+  variables (from `.env`, gitignored, or the process environment) --
+  not Vault/AWS Secrets Manager/etc. `core/` still never reads env vars for
+  secrets at all (CLAUDE.md rule 2); the LLM provider keys are unchanged,
+  still read by `llm/adapter.py`'s own precedence chain.
+- **A production-grade database**: DuckDB (`backend/db.py`) is embedded and
+  effectively single-writer -- correct and well-tested for this demo's
+  single-process usage, but not safe under multiple concurrent `uvicorn`
+  workers writing to the same file. Migrating to Postgres is real, planned
+  follow-up work, not an oversight.
 
 ## Verifying this yourself
 

@@ -106,6 +106,21 @@ make demo        # streamlit run app/streamlit_app.py
 
 Four commands, no API key required -- `use_llm` defaults to off, and even switched on with no key set, the app runs end to end against the deterministic `NullAdapter` fallback. Want to see the live LLM path without a paid key? `build_adapter_from_env` checks `ANTHROPIC_API_KEY` first, then `NVIDIA_API_KEY` (a DeepSeek model via [build.nvidia.com](https://build.nvidia.com) -- correct, but noticeably slower per call than Anthropic).
 
+## Running the API
+
+`app/streamlit_app.py` calls the reconciliation service in-process and never needs this, but the FastAPI service (`backend/`) is the intended production surface if something other than the Streamlit demo needs to call MANIFEST. It requires an API key by default -- see [SECURITY.md](SECURITY.md)'s T-AUTH row.
+
+```bash
+cp .env.example .env             # sets MANIFEST_API_KEYS=dev-local-key-change-me
+make serve                       # uvicorn backend.main:app --reload, http://localhost:8000
+# or, containerized:
+make docker-up                   # docker compose up --build -- api on :8000, demo-ui on :8501
+curl -H "X-API-Key: dev-local-key-change-me" -X POST localhost:8000/reconcile \
+  -H "Content-Type: application/json" -d '{"dataset_id": "demo"}'
+```
+
+`/healthz` never requires a key (a load balancer probe shouldn't need one) and actually checks the database connection rather than always returning 200. One deliberate, documented gap: DuckDB (`backend/db.py`) is embedded and effectively single-writer, which is fine for this demo but not for multiple concurrent `uvicorn` workers -- migrating to Postgres is planned follow-up work, not an oversight (see `SECURITY.md`'s Non-goals).
+
 ## Try the upload flow with your own CSVs
 
 The Upload tab's "Load demo dataset" button is one click, but the app also accepts arbitrary bank/settlement/ledger CSVs through its own upload form -- to actually exercise that path rather than just the pre-loaded demo, [data/sample_upload/](data/sample_upload/) has a second, independently generated dataset (seed 7, different from the seed-42 demo) ready to upload: `bank_statement.csv`, `settlement_batch.csv`, `internal_ledger.csv`. Pick those three in the Upload tab, click "Validate and use these files," then Run -- it produces a genuinely different result (1,057 matched / 9 needs review / 207 exceptions, vs. the demo's 1,001 / 3 / 269), proving the run reflects whatever you actually uploaded. `ground_truth.json` is included alongside it for anyone who wants to verify MANIFEST's output independently, same as the main demo dataset -- it isn't one of the three files you upload.

@@ -1,0 +1,12 @@
+.venv/
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+uploads/
+data/audit.jsonl
+*.duckdb
+*.duckdb.wal
+.env

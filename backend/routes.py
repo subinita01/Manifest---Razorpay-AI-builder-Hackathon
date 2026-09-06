@@ -12,11 +12,12 @@ string -- `str | None` etc. work natively on Python 3.11 without it.
 import json
 from typing import Any
 
-from fastapi import APIRouter, File, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from backend import audit_log, db
+from backend.auth import require_api_key
 from backend.schemas import IngestResponse, ManifestResponse, ReconcileRequest, RunStatusResponse
 from backend.security import (
     TooManyRows,
@@ -29,12 +30,22 @@ from backend.security import (
 )
 from backend.services.reconcile_service import DatasetNotFound, reconcile, resolve_dataset_dir
 
-router = APIRouter()
+# /healthz stays on its own, un-authenticated router: a load balancer or
+# orchestrator's health probe doesn't send an X-API-Key, and shouldn't need
+# to. Every other endpoint requires one -- see backend/auth.py.
+public_router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_api_key)])
 limiter = Limiter(key_func=get_remote_address)
 
 
-@router.get("/healthz")
+@public_router.get("/healthz")
 def healthz() -> dict[str, str]:
+    # Actually exercises the dependency it's guarding, rather than always
+    # returning 200 regardless of whether the database is reachable.
+    try:
+        db.get_connection().execute("SELECT 1").fetchone()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="database unavailable") from exc
     return {"status": "ok", "service": "manifest"}
 
 

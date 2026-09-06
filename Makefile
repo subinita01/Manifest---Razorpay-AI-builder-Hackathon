@@ -6,7 +6,7 @@ PYTHON_BIN := $(shell command -v python3.11 2>/dev/null || command -v python3.12
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: install test lint audit demo-data demo eval smoke cov clean
+.PHONY: install test lint audit demo-data demo serve eval smoke cov clean docker-build docker-up
 
 $(PYTHON):
 	@if [ -z "$(PYTHON_BIN)" ]; then \
@@ -37,6 +37,15 @@ demo-data:
 
 demo:
 	$(PYTHON) -m streamlit run app/streamlit_app.py
+
+serve:
+	$(PYTHON) -m uvicorn backend.main:app --reload
+
+docker-build:
+	docker build -t manifest .
+
+docker-up:
+	docker compose up --build
 
 eval:
 	$(PYTHON) -m evaluation.ablation

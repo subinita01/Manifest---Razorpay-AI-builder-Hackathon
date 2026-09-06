@@ -1,0 +1,30 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      # required: false -- .env is gitignored and optional; every setting
+      # in backend/config.py and llm/adapter.py has a working default
+      # (NullAdapter, no API auth key set) without it.
+      - path: .env
+        required: false
+    volumes:
+      - manifest-data:/app/data
+
+  demo-ui:
+    build: .
+    command: ["streamlit", "run", "app/streamlit_app.py", "--server.address=0.0.0.0"]
+    ports:
+      - "8501:8501"
+    env_file:
+      # required: false -- .env is gitignored and optional; every setting
+      # in backend/config.py and llm/adapter.py has a working default
+      # (NullAdapter, no API auth key set) without it.
+      - path: .env
+        required: false
+    volumes:
+      - manifest-data:/app/data
+
+volumes:
+  manifest-data:

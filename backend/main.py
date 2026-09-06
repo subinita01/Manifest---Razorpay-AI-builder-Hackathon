@@ -12,9 +12,12 @@ from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from backend.routes import limiter, router
+from backend.config import get_settings
+from backend.logging_config import configure_logging
+from backend.routes import limiter, public_router, router
 from backend.security import MAX_UPLOAD_BYTES
 
+configure_logging()
 logger = logging.getLogger("manifest")
 
 app = FastAPI(title="MANIFEST API", version="0.1.0")
@@ -44,10 +47,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     return _unhandled_error_response(exc)
 
 
-# CORS: only the Streamlit dev origin, never a wildcard.
+# CORS: configurable via MANIFEST_CORS_ORIGINS (backend/config.py), never a
+# wildcard -- defaults to the Streamlit dev origin if unset.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8501"],
+    allow_origins=get_settings().cors_origin_list,
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
@@ -69,4 +73,5 @@ async def security_headers_and_body_limit(request: Request, call_next):
     return response
 
 
+app.include_router(public_router)
 app.include_router(router)

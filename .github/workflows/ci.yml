@@ -34,3 +34,6 @@ jobs:
 
       - name: Smoke test -- full pipeline against data/demo/, --no-llm, invariant must hold
         run: python -m scripts.smoke_test
+
+      - name: Build the container image (catches Dockerfile rot; not pushed anywhere)
+        run: docker build -t manifest .
