@@ -26,7 +26,7 @@ From `make eval`, against the committed demo dataset (seed 42, 600 orders, 1,273
 
 The LLM-advisory row in the same table reports **zero uplift on every core metric, by design** -- see [Architecture: the LLM contract](ARCHITECTURE.md#the-llm-contract) for why that's a guarantee, not a shortfall.
 
-Backing every claim on this page: **224 automated tests**, green in CI on every push -- unit tests, an adversarial adapter that tries to talk its way into a fake match, a security suite that actually attempts each attack in [SECURITY.md](SECURITY.md) rather than asserting the control exists, a contract test proving the demo and the API can never silently compute different answers, and integration tests against a real Postgres instance. Nothing here is asserted without a test that would fail the moment it stopped being true.
+Backing every claim on this page: **230 automated tests**, green in CI on every push -- unit tests, an adversarial adapter that tries to talk its way into a fake match, a security suite that actually attempts each attack in [SECURITY.md](SECURITY.md) rather than asserting the control exists, a contract test proving the demo and the API can never silently compute different answers, and integration tests against a real Postgres instance. Nothing here is asserted without a test that would fail the moment it stopped being true.
 
 ## Who this is for
 
@@ -123,6 +123,8 @@ curl -H "X-API-Key: dev-local-key-change-me" -X POST localhost:8000/reconcile \
 
 `/healthz` never requires a key (a load balancer probe shouldn't need one) and actually checks the database connection rather than always returning 200. By default `backend/db.py` uses DuckDB, correct but effectively single-writer -- fine for the Streamlit demo, not for multiple concurrent `uvicorn` workers. Setting `DATABASE_URL=postgresql://...` switches it to a real Postgres connection instead (`backend/db_postgres.py`); `make docker-up` does this automatically for the `api` service against its own `postgres` container, no extra setup needed. One remaining, deliberate gap: each call still opens a fresh connection rather than pooling one -- see `SECURITY.md`'s Non-goals.
 
+`GET /metrics` (also unauthenticated, also real -- Prometheus text format, not a stub) exposes request counts and latencies by method/path, and a `manifest_reconcile_rows_total` counter broken down by dataset and disposition (matched/needs_review/exception), straight from `backend/metrics.py`. Point a Prometheus server's scrape config at it and the numbers on the demo's Metrics tab and this endpoint's counters will agree, because they come from the same underlying run data.
+
 ## Try the upload flow with your own CSVs
 
 The Upload tab's "Load demo dataset" button is one click, but the app also accepts arbitrary bank/settlement/ledger CSVs through its own upload form -- to actually exercise that path rather than just the pre-loaded demo, [data/sample_upload/](data/sample_upload/) has a second, independently generated dataset (seed 7, different from the seed-42 demo) ready to upload: `bank_statement.csv`, `settlement_batch.csv`, `internal_ledger.csv`. Pick those three in the Upload tab, click "Validate and use these files," then Run -- it produces a genuinely different result (1,057 matched / 9 needs review / 207 exceptions, vs. the demo's 1,001 / 3 / 269), proving the run reflects whatever you actually uploaded. `ground_truth.json` is included alongside it for anyone who wants to verify MANIFEST's output independently, same as the main demo dataset -- it isn't one of the three files you upload.
@@ -149,12 +151,12 @@ Every API call is authenticated (fail-closed -- an unconfigured key denies every
 ## Repository shape
 
 - `app/` -- Streamlit demo (Home, Upload, Run, Bridge, Manifest, Metrics tabs)
-- `backend/` -- FastAPI service, pluggable DuckDB/Postgres persistence, fail-closed API-key auth, structured logging, security controls, audit wiring
+- `backend/` -- FastAPI service, pluggable DuckDB/Postgres persistence, fail-closed API-key auth, structured logging, Prometheus metrics, security controls, audit wiring
 - `core/` -- the deterministic matching cascade and schema contracts (`llm/`-free, 95%+ test coverage)
 - `llm/` -- optional advisory layer (narration classification, root-cause narrative, adjustment drafts, and an on-demand natural-language Q&A over a run's exceptions)
 - `config/` -- YAML configuration (TDS code map, tolerances, chart of accounts)
 - `data/` -- synthetic generator, the committed demo dataset (seed 42) with ground truth, and a second sample dataset (seed 7) for testing the manual upload flow
 - `evaluation/` -- metrics, ablation, and threshold-sweep scoring against ground truth
 - `scripts/` -- CI smoke test and demo utilities
-- `tests/` -- unit, adversarial, security, contract-parity, and Postgres integration tests (224, all green in CI)
+- `tests/` -- unit, adversarial, security, contract-parity, and Postgres integration tests (230, all green in CI)
 - `Dockerfile`, `docker-compose.yml` -- one image, three services (API, Postgres, Streamlit demo) for a reproducible containerized deploy

@@ -12,12 +12,13 @@ string -- `str | None` etc. work natively on Python 3.11 without it.
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, Response, UploadFile
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from backend import audit_log, db
 from backend.auth import require_api_key
+from backend.metrics import RECONCILE_ROWS, render_latest
 from backend.schemas import IngestResponse, ManifestResponse, ReconcileRequest, RunStatusResponse
 from backend.security import (
     TooManyRows,
@@ -47,6 +48,15 @@ def healthz() -> dict[str, str]:
     except Exception as exc:
         raise HTTPException(status_code=503, detail="database unavailable") from exc
     return {"status": "ok", "service": "manifest"}
+
+
+@public_router.get("/metrics")
+def prometheus_metrics() -> Response:
+    """Prometheus scrape endpoint -- unrelated to GET /metrics/{run_id}
+    below, which returns precision/recall for one specific run. This one
+    is unauthenticated like /healthz; see backend/metrics.py for why."""
+    body, content_type = render_latest()
+    return Response(content=body, media_type=content_type)
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -123,6 +133,9 @@ def do_reconcile(
             "caller": caller,
         }
     )
+    RECONCILE_ROWS.labels(payload.dataset_id, "matched").inc(stored["matched_row_count"])
+    RECONCILE_ROWS.labels(payload.dataset_id, "needs_review").inc(stored["needs_review_row_count"])
+    RECONCILE_ROWS.labels(payload.dataset_id, "exception").inc(stored["exception_row_count"])
     return RunStatusResponse(
         run_id=run_id,
         status="completed",

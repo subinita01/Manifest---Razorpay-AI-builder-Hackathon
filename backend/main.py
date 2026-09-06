@@ -4,6 +4,7 @@ every control wired up here."""
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 
 from fastapi import FastAPI, Request
@@ -14,6 +15,7 @@ from slowapi.errors import RateLimitExceeded
 
 from backend.config import get_settings
 from backend.logging_config import configure_logging
+from backend.metrics import HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS
 from backend.routes import limiter, public_router, router
 from backend.security import MAX_UPLOAD_BYTES
 
@@ -70,6 +72,28 @@ async def security_headers_and_body_limit(request: Request, call_next):
         return _unhandled_error_response(exc)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
+    return response
+
+
+# Registered after security_headers_and_body_limit -- Starlette wraps a
+# later @app.middleware("http") registration around earlier ones, so this
+# one is outermost and measures the full request as a caller experiences
+# it, including a status code for requests rejected before routing (e.g.
+# the 413 above). Verified live which registration order wins before
+# writing this: request.scope["route"] is only populated *after*
+# call_next() returns (once routing has actually happened), and only for
+# requests that reached a route at all -- hence the fallback to the raw
+# path, which only affects rare pre-routing rejections, never a normal
+# request with a run_id in the URL.
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start
+    route = request.scope.get("route")
+    path_label = route.path if route is not None else request.url.path
+    HTTP_REQUESTS.labels(request.method, path_label, str(response.status_code)).inc()
+    HTTP_REQUEST_DURATION_SECONDS.labels(request.method, path_label).observe(duration)
     return response
 
 
