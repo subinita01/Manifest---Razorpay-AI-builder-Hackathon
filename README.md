@@ -26,6 +26,8 @@ From `make eval`, against the committed demo dataset (seed 42, 600 orders, 1,273
 
 The LLM-advisory row in the same table reports **zero uplift on every core metric, by design** -- see [Architecture: the LLM contract](ARCHITECTURE.md#the-llm-contract) for why that's a guarantee, not a shortfall.
 
+Backing every claim on this page: **224 automated tests**, green in CI on every push -- unit tests, an adversarial adapter that tries to talk its way into a fake match, a security suite that actually attempts each attack in [SECURITY.md](SECURITY.md) rather than asserting the control exists, a contract test proving the demo and the API can never silently compute different answers, and integration tests against a real Postgres instance. Nothing here is asserted without a test that would fail the moment it stopped being true.
+
 ## Who this is for
 
 Two people, two very different reasons to open this tool.
@@ -88,7 +90,7 @@ flowchart TD
     R --> AU["core/audit.py: hash-chained decision log"]
     R -. "use_llm=True, advisory only" .-> L["llm/enrich.py"]
     L -. "detail dict only -- never reclassifies" .-> R
-    R --> DB[("DuckDB -- backend/db.py")]
+    R --> DB[("DuckDB / Postgres -- backend/db.py")]
     DB --> API["FastAPI -- backend/routes.py"]
     DB --> UI["Streamlit -- app/streamlit_app.py"]
 ```
@@ -138,18 +140,21 @@ The Upload tab's "Load demo dataset" button is one click, but the app also accep
 
 Full threat model and mitigating controls: [SECURITY.md](SECURITY.md). The one line that matters for a panel: bank narration text is wrapped in an `<untrusted_data>` tag before it ever reaches the LLM, and a deterministic keyword scan flags suspicious narration *before* any adapter is consulted -- so even an adversarial LLM response that claims an injected row is "a clean, high-confidence match" cannot change the match outcome. Proven in `tests/test_prompt_injection.py` against an adapter built to try exactly that.
 
+Every API call is authenticated (fail-closed -- an unconfigured key denies every request, never defaults to open) and attributed: `/ingest` and `/reconcile` record *which caller* ran them in the same tamper-evident audit trail that already records *what* happened, so the answer to "who ran this" is never just "trust me."
+
 ## A known gap, on purpose
 
 `config/tds_code_map.yaml` -- the legacy-section-to-new-numeric-code mapping for the FY 2026-27 TDS migration -- ships with every entry marked `verified: false`. These are placeholder values pending confirmation against the official CBDT notification; the file is the single source of truth precisely so that correcting them later requires editing YAML, not refactoring `core/`. MANIFEST treats an unverified or contradicted mapping as a first-class `TDS_CODE_MIGRATION_BREAK` exception rather than silently trusting it.
 
 ## Repository shape
 
-- `app/` -- Streamlit demo (Upload, Run, Bridge, Manifest, Metrics tabs)
-- `backend/` -- FastAPI service, DuckDB persistence, security controls, audit wiring
+- `app/` -- Streamlit demo (Home, Upload, Run, Bridge, Manifest, Metrics tabs)
+- `backend/` -- FastAPI service, pluggable DuckDB/Postgres persistence, fail-closed API-key auth, structured logging, security controls, audit wiring
 - `core/` -- the deterministic matching cascade and schema contracts (`llm/`-free, 95%+ test coverage)
 - `llm/` -- optional advisory layer (narration classification, root-cause narrative, adjustment drafts, and an on-demand natural-language Q&A over a run's exceptions)
 - `config/` -- YAML configuration (TDS code map, tolerances, chart of accounts)
 - `data/` -- synthetic generator, the committed demo dataset (seed 42) with ground truth, and a second sample dataset (seed 7) for testing the manual upload flow
 - `evaluation/` -- metrics, ablation, and threshold-sweep scoring against ground truth
 - `scripts/` -- CI smoke test and demo utilities
-- `tests/` -- unit, integration, and security regression tests
+- `tests/` -- unit, adversarial, security, contract-parity, and Postgres integration tests (224, all green in CI)
+- `Dockerfile`, `docker-compose.yml` -- one image, three services (API, Postgres, Streamlit demo) for a reproducible containerized deploy
