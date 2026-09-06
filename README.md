@@ -26,7 +26,7 @@ From `make eval`, against the committed demo dataset (seed 42, 600 orders, 1,273
 
 The LLM-advisory row in the same table reports **zero uplift on every core metric, by design** -- see [Architecture: the LLM contract](ARCHITECTURE.md#the-llm-contract) for why that's a guarantee, not a shortfall.
 
-Backing every claim on this page: **233 automated tests**, green in CI on every push -- unit tests, an adversarial adapter that tries to talk its way into a fake match, a security suite that actually attempts each attack in [SECURITY.md](SECURITY.md) rather than asserting the control exists, a contract test proving the demo and the API can never silently compute different answers, and integration tests against a real Postgres instance. Nothing here is asserted without a test that would fail the moment it stopped being true.
+Backing every claim on this page: **241 automated tests**, green in CI on every push -- unit tests, an adversarial adapter that tries to talk its way into a fake match, a security suite that actually attempts each attack in [SECURITY.md](SECURITY.md) rather than asserting the control exists, a contract test proving the demo and the API can never silently compute different answers, and integration tests against a real Postgres instance. Nothing here is asserted without a test that would fail the moment it stopped being true.
 
 ## Who this is for
 
@@ -110,7 +110,7 @@ Four commands, no API key required -- `use_llm` defaults to off, and even switch
 
 ## Running the API
 
-`app/streamlit_app.py` calls the reconciliation service in-process and never needs this, but the FastAPI service (`backend/`) is the intended production surface if something other than the Streamlit demo needs to call MANIFEST. It requires an API key by default -- see [SECURITY.md](SECURITY.md)'s T-AUTH row.
+`app/streamlit_app.py` calls the reconciliation service in-process and never needs this, but the FastAPI service (`backend/`) is the intended production surface if something other than the Streamlit demo needs to call MANIFEST. It requires an API key by default -- see [SECURITY.md](SECURITY.md)'s T-AUTH row. That key's label is also a real tenant boundary now (T-TENANT): two differently-labeled keys can never see each other's runs or uploaded datasets -- proven in `tests/test_tenancy.py` over real HTTP, not just documented.
 
 ```bash
 cp .env.example .env             # sets MANIFEST_API_KEYS=dev-local-key-change-me
@@ -158,5 +158,5 @@ Every API call is authenticated (fail-closed -- an unconfigured key denies every
 - `data/` -- synthetic generator, the committed demo dataset (seed 42) with ground truth, and a second sample dataset (seed 7) for testing the manual upload flow
 - `evaluation/` -- metrics, ablation, and threshold-sweep scoring against ground truth
 - `scripts/` -- CI smoke test and demo utilities
-- `tests/` -- unit, adversarial, security, contract-parity, and Postgres integration tests (233, all green in CI)
+- `tests/` -- unit, adversarial, security, contract-parity, tenancy-isolation, and Postgres integration tests (241, all green in CI)
 - `Dockerfile`, `docker-compose.yml` -- one image, three services (API, Postgres, Streamlit demo) for a reproducible containerized deploy

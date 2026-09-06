@@ -94,9 +94,12 @@ class DatasetNotFound(FileNotFoundError):
     pass
 
 
-def resolve_dataset_dir(dataset_id: str) -> Path:
+def resolve_dataset_dir(dataset_id: str, tenant_id: str | None = None) -> Path:
     dataset_id = validate_dataset_id(dataset_id)
-    directory = DEMO_DIR if dataset_id == "demo" else dataset_dir(dataset_id)
+    # "demo" is a shared, read-only dataset on purpose -- every tenant
+    # sees the same one-click try-it-out data, regardless of tenant_id.
+    # Only an uploaded (UUID) dataset is ever tenant-scoped.
+    directory = DEMO_DIR if dataset_id == "demo" else dataset_dir(dataset_id, tenant_id=tenant_id)
     if not directory.exists():
         raise DatasetNotFound(dataset_id)
     return directory
@@ -106,15 +109,25 @@ def compute_idempotency_key(
     dataset_id: str,
     use_llm: bool,
     fuzzy_threshold: float,
+    tenant_id: str | None = None,
     explicit_key: str | None = None,
 ) -> str:
     """Uses the client-supplied Idempotency-Key header when present;
-    otherwise derives one from the dataset + params so identical requests
-    without an explicit header still hit the cache."""
+    otherwise derives one from the dataset + params + tenant so identical
+    requests without an explicit header still hit the cache -- but never
+    across two different tenants' identical requests, which must never
+    collide on each other's cached run. Defense in depth alongside
+    db.find_run_by_idempotency_key's own tenant_id filter, not a
+    substitute for it."""
     if explicit_key:
         return explicit_key
     payload = json.dumps(
-        {"dataset_id": dataset_id, "use_llm": use_llm, "fuzzy_threshold": fuzzy_threshold},
+        {
+            "dataset_id": dataset_id,
+            "use_llm": use_llm,
+            "fuzzy_threshold": fuzzy_threshold,
+            "tenant_id": tenant_id,
+        },
         sort_keys=True,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -126,15 +139,18 @@ def reconcile(
     use_llm: bool = False,
     fuzzy_threshold: float = 0.90,
     idempotency_key: str | None = None,
+    tenant_id: str | None = None,
 ) -> str:
     """Returns a run_id: either freshly computed, or the cached run for an
-    identical (dataset, params) combination."""
-    key = compute_idempotency_key(dataset_id, use_llm, fuzzy_threshold, idempotency_key)
-    existing = db.find_run_by_idempotency_key(conn, key)
+    identical (dataset, params) combination *within the same tenant* --
+    tenant_id defaults to None, which is app/streamlit_app.py's existing
+    behavior, byte-for-byte unchanged."""
+    key = compute_idempotency_key(dataset_id, use_llm, fuzzy_threshold, tenant_id, idempotency_key)
+    existing = db.find_run_by_idempotency_key(conn, key, tenant_id=tenant_id)
     if existing is not None:
         return existing
 
-    directory = resolve_dataset_dir(dataset_id)
+    directory = resolve_dataset_dir(dataset_id, tenant_id=tenant_id)
     bank_rows = load_bank_csv(directory / "bank_statement.csv")
     settlement_rows = load_settlement_csv(directory / "settlement_batch.csv")
     ledger_rows = load_ledger_csv(directory / "internal_ledger.csv")
@@ -175,6 +191,7 @@ def reconcile(
         use_llm=use_llm,
         fuzzy_threshold=Decimal(str(fuzzy_threshold)),
         idempotency_key=key,
+        tenant_id=tenant_id,
     )
     return run_id
 

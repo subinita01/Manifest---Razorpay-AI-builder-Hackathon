@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 import backend.db as db_module
 from backend.services.reconcile_service import reconcile
+from tests.conftest import TEST_API_KEY
 
 _COMPARABLE_RUN_FIELDS = [
     "total_input_rows",
@@ -60,7 +61,11 @@ def test_http_and_in_process_entry_points_persist_identical_results(client: Test
     assert in_process_run_id != http_run_id  # two independently computed runs, not a cache hit
 
     in_process_summary = db_module.get_run(conn, in_process_run_id)
-    http_summary = db_module.get_run(conn, http_run_id)
+    # The HTTP path is authenticated as TEST_API_KEY (tests/conftest.py's
+    # client fixture), which is now also a tenant boundary -- its run was
+    # saved with tenant_id=TEST_API_KEY, not tenant_id=None, so the lookup
+    # must match that or get_run correctly (and separately) proves nothing.
+    http_summary = db_module.get_run(conn, http_run_id, tenant_id=TEST_API_KEY)
     for field in _COMPARABLE_RUN_FIELDS:
         assert (
             in_process_summary[field] == http_summary[field]

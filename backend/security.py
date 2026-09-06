@@ -38,15 +38,25 @@ def new_dataset_id() -> str:
     return uuid.uuid4().hex
 
 
-def dataset_dir(dataset_id: str) -> Path:
+def dataset_dir(dataset_id: str, tenant_id: str | None = None) -> Path:
     """Resolve dataset_id to a directory inside UPLOAD_DIR, asserting the
     resolved path is actually inside it. dataset_id must already be a
     server-generated UUID hex string (see new_dataset_id) -- this is a
     defense-in-depth assertion, not the only check: callers must not accept
     an arbitrary client-supplied dataset_id here without validating its
     shape first (see validate_dataset_id).
+
+    tenant_id, when given, scopes the path under UPLOAD_DIR/<tenant_id>/
+    instead of flat UPLOAD_DIR/<dataset_id> -- so one tenant's uploaded
+    dataset UUID can never collide with or be guessed into another
+    tenant's. Always the server's own configured label for the matched
+    API key (backend/auth.py), never client-supplied, so it can't itself
+    carry a path-traversal payload; the resolves-inside-UPLOAD_DIR
+    assertion below still holds regardless. Defaults to None (today's
+    flat layout) so app/streamlit_app.py's existing calls are unaffected.
     """
-    candidate = (UPLOAD_DIR / dataset_id).resolve()
+    base = (UPLOAD_DIR / tenant_id) if tenant_id else UPLOAD_DIR
+    candidate = (base / dataset_id).resolve()
     upload_root = UPLOAD_DIR.resolve()
     if upload_root != candidate and upload_root not in candidate.parents:
         raise UnsafePath(f"resolved path {candidate} escapes {upload_root}")

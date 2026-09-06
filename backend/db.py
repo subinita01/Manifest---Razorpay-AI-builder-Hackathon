@@ -49,8 +49,14 @@ CREATE TABLE IF NOT EXISTS runs (
     total_input_rows INTEGER,
     matched_row_count INTEGER,
     needs_review_row_count INTEGER,
-    exception_row_count INTEGER
+    exception_row_count INTEGER,
+    tenant_id TEXT
 );
+
+-- CREATE TABLE IF NOT EXISTS is a no-op against a runs table that already
+-- existed before tenant_id was added, so an explicit ALTER is what
+-- actually lands the column on a pre-existing local data/manifest.duckdb.
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS tenant_id TEXT;
 
 CREATE TABLE IF NOT EXISTS matches (
     run_id TEXT,
@@ -87,6 +93,7 @@ CREATE TABLE IF NOT EXISTS bridges (
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_idempotency ON runs(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_runs_tenant ON runs(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_matches_run ON matches(run_id);
 CREATE INDEX IF NOT EXISTS idx_exceptions_run ON exceptions(run_id);
 CREATE INDEX IF NOT EXISTS idx_bridges_run_utr ON bridges(run_id, settlement_utr);
@@ -110,10 +117,22 @@ def get_connection(db_path: Path | None = None) -> DBConnection:
     return conn
 
 
-def find_run_by_idempotency_key(conn: DBConnection, idempotency_key: str) -> str | None:
-    row = conn.execute(
-        "SELECT run_id FROM runs WHERE idempotency_key = ? LIMIT 1", [idempotency_key]
-    ).fetchone()
+def find_run_by_idempotency_key(
+    conn: DBConnection, idempotency_key: str, tenant_id: str | None = None
+) -> str | None:
+    # tenant_id is a strict equality filter, including NULL -- a caller
+    # with no tenant only ever finds rows saved with no tenant, never any
+    # tenant's cached run, and vice versa. See get_run for the same rule.
+    if tenant_id is not None:
+        row = conn.execute(
+            "SELECT run_id FROM runs WHERE idempotency_key = ? AND tenant_id = ? LIMIT 1",
+            [idempotency_key, tenant_id],
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT run_id FROM runs WHERE idempotency_key = ? AND tenant_id IS NULL LIMIT 1",
+            [idempotency_key],
+        ).fetchone()
     return row[0] if row else None
 
 
@@ -125,6 +144,7 @@ def save_run(
     use_llm: bool,
     fuzzy_threshold: Decimal,
     idempotency_key: str,
+    tenant_id: str | None = None,
 ) -> None:
     """Writes the run, its matches, exceptions, and bridges as one atomic
     transaction. Without this, a crash partway through (a serialization
@@ -141,7 +161,7 @@ def save_run(
     conn.execute("BEGIN")
     try:
         conn.execute(
-            "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 manifest.run_id,
                 dataset_id,
@@ -158,6 +178,7 @@ def save_run(
                 result.matched_row_count,
                 result.needs_review_row_count,
                 result.exception_row_count,
+                tenant_id,
             ],
         )
 
@@ -236,7 +257,16 @@ def save_run(
         conn.execute("COMMIT")
 
 
-def get_run(conn: DBConnection, run_id: str) -> dict[str, Any] | None:
+def get_run(conn: DBConnection, run_id: str, tenant_id: str | None = None) -> dict[str, Any] | None:
+    """tenant_id is a strict equality filter, including NULL -- passing
+    None matches only runs saved with no tenant (app/streamlit_app.py's
+    usage, unchanged), never any tenant's data; passing a tenant_id
+    matches only that tenant's own runs, never another tenant's or a
+    no-tenant run. backend/routes.py calls this first, with the
+    authenticated caller as tenant_id, before any other endpoint
+    (/bridge, /manifest, /metrics, /audit) is allowed to touch a run_id
+    -- a cross-tenant request for someone else's run_id gets exactly the
+    same None result, and the same 404, as a run_id that never existed."""
     columns = [
         "run_id",
         "dataset_id",
@@ -254,9 +284,11 @@ def get_run(conn: DBConnection, run_id: str) -> dict[str, Any] | None:
         "needs_review_row_count",
         "exception_row_count",
     ]
-    row = conn.execute(
-        f"SELECT {', '.join(columns)} FROM runs WHERE run_id = ?", [run_id]
-    ).fetchone()
+    select = f"SELECT {', '.join(columns)} FROM runs WHERE run_id = ?"
+    if tenant_id is not None:
+        row = conn.execute(f"{select} AND tenant_id = ?", [run_id, tenant_id]).fetchone()
+    else:
+        row = conn.execute(f"{select} AND tenant_id IS NULL", [run_id]).fetchone()
     if row is None:
         return None
     record = dict(zip(columns, row))

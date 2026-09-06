@@ -68,7 +68,7 @@ async def ingest(
     caller: str = Depends(require_api_key),
 ) -> IngestResponse:
     dataset_id = new_dataset_id()
-    target_dir = dataset_dir(dataset_id)
+    target_dir = dataset_dir(dataset_id, tenant_id=caller)
 
     uploads = {
         "bank_statement": bank_statement,
@@ -119,13 +119,14 @@ def do_reconcile(
             use_llm=payload.use_llm,
             fuzzy_threshold=payload.fuzzy_threshold,
             idempotency_key=idempotency_key,
+            tenant_id=caller,
         )
     except UnsafePath as exc:
         raise HTTPException(status_code=400, detail="invalid dataset_id") from exc
     except DatasetNotFound as exc:
         raise HTTPException(status_code=404, detail=f"unknown dataset: {exc}") from exc
 
-    stored = db.get_run(conn, run_id)
+    stored = db.get_run(conn, run_id, tenant_id=caller)
     audit_log.get_audit_logger().append(
         {
             "event": "reconcile",
@@ -150,8 +151,12 @@ def do_reconcile(
 
 
 @router.get("/run/{run_id}", response_model=RunStatusResponse)
-def get_run(run_id: str, conn: db.DBConnection = Depends(get_db_connection)) -> RunStatusResponse:
-    stored = db.get_run(conn, run_id)
+def get_run(
+    run_id: str,
+    caller: str = Depends(require_api_key),
+    conn: db.DBConnection = Depends(get_db_connection),
+) -> RunStatusResponse:
+    stored = db.get_run(conn, run_id, tenant_id=caller)
     if stored is None:
         raise HTTPException(status_code=404, detail="unknown run_id")
     return RunStatusResponse(
@@ -168,10 +173,18 @@ def get_run(run_id: str, conn: db.DBConnection = Depends(get_db_connection)) -> 
 
 @router.get("/bridge/{run_id}/{settlement_id}")
 def get_bridge(
-    run_id: str, settlement_id: str, conn: db.DBConnection = Depends(get_db_connection)
+    run_id: str,
+    settlement_id: str,
+    caller: str = Depends(require_api_key),
+    conn: db.DBConnection = Depends(get_db_connection),
 ) -> dict[str, Any]:
     """settlement_id here is the settlement_utr identifying the batch, since
-    a bridge is computed per UTR-group, not per individual settlement row."""
+    a bridge is computed per UTR-group, not per individual settlement row.
+    Ownership of run_id is checked first -- a bridge under a run_id that
+    exists but belongs to a different tenant returns the same 404 as one
+    that never existed."""
+    if db.get_run(conn, run_id, tenant_id=caller) is None:
+        raise HTTPException(status_code=404, detail="unknown run_id/settlement_id")
     bridge = db.get_bridge(conn, run_id, settlement_id)
     if bridge is None:
         raise HTTPException(status_code=404, detail="unknown run_id/settlement_id")
@@ -180,17 +193,23 @@ def get_bridge(
 
 @router.get("/manifest/{run_id}", response_model=ManifestResponse)
 def get_manifest(
-    run_id: str, conn: db.DBConnection = Depends(get_db_connection)
+    run_id: str,
+    caller: str = Depends(require_api_key),
+    conn: db.DBConnection = Depends(get_db_connection),
 ) -> ManifestResponse:
-    if db.get_run(conn, run_id) is None:
+    if db.get_run(conn, run_id, tenant_id=caller) is None:
         raise HTTPException(status_code=404, detail="unknown run_id")
     exceptions = db.get_exceptions(conn, run_id)
     return ManifestResponse(run_id=run_id, exceptions=exceptions)
 
 
 @router.get("/metrics/{run_id}")
-def get_metrics(run_id: str, conn: db.DBConnection = Depends(get_db_connection)) -> dict[str, Any]:
-    stored = db.get_run(conn, run_id)
+def get_metrics(
+    run_id: str,
+    caller: str = Depends(require_api_key),
+    conn: db.DBConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    stored = db.get_run(conn, run_id, tenant_id=caller)
     if stored is None:
         raise HTTPException(status_code=404, detail="unknown run_id")
 
@@ -249,7 +268,13 @@ def get_metrics(run_id: str, conn: db.DBConnection = Depends(get_db_connection))
 
 
 @router.get("/audit/{run_id}")
-def get_audit(run_id: str) -> dict[str, Any]:
+def get_audit(
+    run_id: str,
+    caller: str = Depends(require_api_key),
+    conn: db.DBConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    if db.get_run(conn, run_id, tenant_id=caller) is None:
+        raise HTTPException(status_code=404, detail="unknown run_id")
     if not audit_log.AUDIT_LOG_PATH.exists():
         return {"run_id": run_id, "events": [], "chain_valid": True}
     events = []

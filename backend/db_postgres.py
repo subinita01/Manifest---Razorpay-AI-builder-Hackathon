@@ -56,8 +56,14 @@ CREATE TABLE IF NOT EXISTS runs (
     total_input_rows INTEGER,
     matched_row_count INTEGER,
     needs_review_row_count INTEGER,
-    exception_row_count INTEGER
+    exception_row_count INTEGER,
+    tenant_id TEXT
 );
+
+-- CREATE TABLE IF NOT EXISTS is a no-op against a runs table that already
+-- existed before tenant_id was added, so an explicit ALTER is what
+-- actually lands the column on a pre-existing Postgres database.
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS tenant_id TEXT;
 
 CREATE TABLE IF NOT EXISTS matches (
     run_id TEXT,
@@ -94,6 +100,7 @@ CREATE TABLE IF NOT EXISTS bridges (
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_idempotency ON runs(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_runs_tenant ON runs(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_matches_run ON matches(run_id);
 CREATE INDEX IF NOT EXISTS idx_exceptions_run ON exceptions(run_id);
 CREATE INDEX IF NOT EXISTS idx_bridges_run_utr ON bridges(run_id, settlement_utr);

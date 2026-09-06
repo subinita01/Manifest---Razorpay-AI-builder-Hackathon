@@ -15,6 +15,7 @@ the control exists. `pytest tests/test_security.py` runs the attack suite;
 | T8 | Information disclosure via a leaked traceback or internal exception message on an unhandled error | A global handler (`backend/main.py:unhandled_exception_handler`) returns only `{"error": "internal_error", "correlation_id": ...}`; the traceback is logged server-side only, keyed by the same correlation_id. Because a plain `@app.middleware("http")` function is a `BaseHTTPMiddleware` under the hood, and Starlette does not reliably route an exception raised downstream of one to a generic `@app.exception_handler(Exception)`, the middleware also wraps `call_next` in its own try/except using the same formatter -- both paths are covered. | `test_t8_internal_error_never_leaks_a_traceback` (tests/test_security.py) |
 | T-RATE | Abuse via rapid repeated `/reconcile` calls (each one runs the full matching cascade) | `slowapi` rate limiting, 10/minute on `/reconcile`, keyed by client IP | `test_rate_limiting_blocks_the_11th_rapid_reconcile_request` (tests/test_security.py) |
 | T-AUTH | Unauthenticated access to any endpoint that reads or runs a reconciliation, and an audit trail that can't say who did it | Every route except `/healthz` requires a valid `X-API-Key` header, checked against `MANIFEST_API_KEYS` (`backend/auth.py:require_api_key`). Fail-closed: an unset `MANIFEST_API_KEYS` denies every protected request rather than defaulting to open. Keys are configured as `label:key` pairs; `require_api_key` returns the matched label, and `/ingest`/`/reconcile` record it as `"caller"` in their audit log entries -- the trail knows who called an endpoint, not just what happened. | `tests/test_auth.py` -- missing key, wrong key, and the fail-closed no-keys-configured case all assert 401; correct key asserts 200; two tests read the real audit log JSONL back and assert the recorded `"caller"` matches the label of the key that was used |
+| T-TENANT | One caller reading, or silently sharing an idempotency cache with, another caller's runs or uploaded datasets | The same label from T-AUTH is now also a data boundary, not just an audit label. `backend/db.py`'s `runs` table carries a `tenant_id` column; `get_run` and `find_run_by_idempotency_key` apply it as a strict equality filter, including `NULL` (`app/streamlit_app.py`'s in-process calls, which never pass one). `/run`, `/bridge`, `/manifest`, `/metrics`, and `/audit` all check run ownership via `get_run(..., tenant_id=caller)` *before* returning anything -- a `run_id` that exists but belongs to another tenant returns the identical 404 a nonexistent `run_id` would, never a 403 that would confirm it's real. Uploaded datasets are similarly isolated under `uploads/<tenant_id>/<dataset_id>` (`backend/security.py:dataset_dir`); the tenant-shared `"demo"` dataset is the one deliberate exception. | `tests/test_tenancy.py` -- two labeled keys, identical `/reconcile` requests get independent `run_id`s (idempotency doesn't cross tenants), and cross-tenant requests to all five run-scoped endpoints get 404, not the data; verified live against a real server and real Postgres, not just `TestClient` |
 | T-CORS | A malicious origin driving the API from a browser | `CORSMiddleware` allows only the origins in `MANIFEST_CORS_ORIGINS` (`backend/config.py`, defaults to `http://localhost:8501`) -- never a wildcard | manual: `curl -H "Origin: http://evil.example" -I http://localhost:8000/healthz` shows no `Access-Control-Allow-Origin` for that origin |
 | T-HEADERS | MIME-sniffing and clickjacking | Every response carries `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY` (`backend/main.py` middleware) | covered implicitly by every `tests/test_api.py` request going through the same middleware; no dedicated header-content test yet |
 | T-VALIDATE | Malformed or type-confused request bodies (e.g. a float where a str is required, extra unexpected fields) | Every request body is a `ConfigDict(strict=True, extra="forbid")` Pydantic model (`backend/schemas.py`) | FastAPI/Pydantic reject non-conforming bodies with 422 automatically; exercised incidentally by every `tests/test_api.py` call using well-formed bodies |
@@ -24,11 +25,14 @@ the control exists. `pytest tests/test_security.py` runs the attack suite;
 
 ## Non-goals (for now)
 
-- **Multi-tenant user accounts / RBAC**: `MANIFEST_API_KEYS` (T-AUTH above)
-  is simple shared-secret API-key auth, not a user model -- every valid key
-  has identical access to every endpoint. Fine for a single backend client;
-  not a substitute for real per-user authorization if this ever serves
-  multiple untrusted clients directly.
+- **Per-user accounts / RBAC within a tenant**: T-TENANT above closes real
+  data isolation *between* labels -- that's not the same as a user model
+  *within* one. Every key sharing a label has identical, full access to
+  that label's data; there's no login flow, no per-user permission, no
+  role narrower than "this label's data, entirely." Fine for one key per
+  tenant (the common case); not a substitute for real per-user
+  authorization if a single tenant ever needs multiple people with
+  different access levels.
 - **TLS termination**: assumed to be handled by whatever reverse proxy
   fronts this in a real deployment; the app itself runs plain HTTP.
 - **A production secrets manager**: `backend/config.py` centralizes which

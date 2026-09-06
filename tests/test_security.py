@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from backend.export import exceptions_to_csv
 from backend.security import UPLOAD_DIR
+from tests.conftest import TEST_API_KEY
 
 DEMO_DIR = Path(__file__).resolve().parent.parent / "data" / "demo"
 
@@ -43,9 +44,11 @@ def test_t3_path_traversal_via_malicious_upload_filename(client: TestClient):
     assert response.status_code == 200
     dataset_id = response.json()["dataset_id"]
 
-    # The file must have landed inside uploads/<dataset_id>/, under the
-    # server-chosen name, never anywhere resolving outside UPLOAD_DIR.
-    expected_path = UPLOAD_DIR / dataset_id / "bank_statement.csv"
+    # The file must have landed inside uploads/<tenant_id>/<dataset_id>/
+    # (the client fixture's TEST_API_KEY is also its tenant boundary --
+    # see backend/security.py:dataset_dir), under the server-chosen name,
+    # never anywhere resolving outside UPLOAD_DIR.
+    expected_path = UPLOAD_DIR / TEST_API_KEY / dataset_id / "bank_statement.csv"
     assert expected_path.exists()
     assert UPLOAD_DIR.resolve() in expected_path.resolve().parents
 
