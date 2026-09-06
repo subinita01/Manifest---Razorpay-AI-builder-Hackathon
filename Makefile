@@ -54,7 +54,7 @@ smoke:
 	$(PYTHON) -m scripts.smoke_test
 
 cov:
-	$(PYTHON) -m pytest --cov=core --cov-report=term-missing
+	$(PYTHON) -m pytest --cov=core --cov=backend --cov-report=term-missing
 
 clean:
 	find . -name "__pycache__" -type d -prune -exec rm -rf {} +

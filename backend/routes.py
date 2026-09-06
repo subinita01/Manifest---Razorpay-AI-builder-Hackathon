@@ -18,6 +18,7 @@ from slowapi.util import get_remote_address
 
 from backend import audit_log, db
 from backend.auth import require_api_key
+from backend.deps import get_db_connection
 from backend.metrics import RECONCILE_ROWS, render_latest
 from backend.schemas import IngestResponse, ManifestResponse, ReconcileRequest, RunStatusResponse
 from backend.security import (
@@ -40,11 +41,11 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 @public_router.get("/healthz")
-def healthz() -> dict[str, str]:
+def healthz(conn: db.DBConnection = Depends(get_db_connection)) -> dict[str, str]:
     # Actually exercises the dependency it's guarding, rather than always
     # returning 200 regardless of whether the database is reachable.
     try:
-        db.get_connection().execute("SELECT 1").fetchone()
+        conn.execute("SELECT 1").fetchone()
     except Exception as exc:
         raise HTTPException(status_code=503, detail="database unavailable") from exc
     return {"status": "ok", "service": "manifest"}
@@ -109,8 +110,8 @@ def do_reconcile(
     payload: ReconcileRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     caller: str = Depends(require_api_key),
+    conn: db.DBConnection = Depends(get_db_connection),
 ) -> RunStatusResponse:
-    conn = db.get_connection()
     try:
         run_id = reconcile(
             conn,
@@ -149,8 +150,7 @@ def do_reconcile(
 
 
 @router.get("/run/{run_id}", response_model=RunStatusResponse)
-def get_run(run_id: str) -> RunStatusResponse:
-    conn = db.get_connection()
+def get_run(run_id: str, conn: db.DBConnection = Depends(get_db_connection)) -> RunStatusResponse:
     stored = db.get_run(conn, run_id)
     if stored is None:
         raise HTTPException(status_code=404, detail="unknown run_id")
@@ -167,10 +167,11 @@ def get_run(run_id: str) -> RunStatusResponse:
 
 
 @router.get("/bridge/{run_id}/{settlement_id}")
-def get_bridge(run_id: str, settlement_id: str) -> dict[str, Any]:
+def get_bridge(
+    run_id: str, settlement_id: str, conn: db.DBConnection = Depends(get_db_connection)
+) -> dict[str, Any]:
     """settlement_id here is the settlement_utr identifying the batch, since
     a bridge is computed per UTR-group, not per individual settlement row."""
-    conn = db.get_connection()
     bridge = db.get_bridge(conn, run_id, settlement_id)
     if bridge is None:
         raise HTTPException(status_code=404, detail="unknown run_id/settlement_id")
@@ -178,8 +179,9 @@ def get_bridge(run_id: str, settlement_id: str) -> dict[str, Any]:
 
 
 @router.get("/manifest/{run_id}", response_model=ManifestResponse)
-def get_manifest(run_id: str) -> ManifestResponse:
-    conn = db.get_connection()
+def get_manifest(
+    run_id: str, conn: db.DBConnection = Depends(get_db_connection)
+) -> ManifestResponse:
     if db.get_run(conn, run_id) is None:
         raise HTTPException(status_code=404, detail="unknown run_id")
     exceptions = db.get_exceptions(conn, run_id)
@@ -187,8 +189,7 @@ def get_manifest(run_id: str) -> ManifestResponse:
 
 
 @router.get("/metrics/{run_id}")
-def get_metrics(run_id: str) -> dict[str, Any]:
-    conn = db.get_connection()
+def get_metrics(run_id: str, conn: db.DBConnection = Depends(get_db_connection)) -> dict[str, Any]:
     stored = db.get_run(conn, run_id)
     if stored is None:
         raise HTTPException(status_code=404, detail="unknown run_id")

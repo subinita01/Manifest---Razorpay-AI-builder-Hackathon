@@ -18,11 +18,23 @@ string replace, which is only safe because no query in backend/db.py ever
 contains a literal `?` inside a string value -- true today, and guarded
 (not proven) by the placeholder/param-count assertion below, which catches
 most accidental mismatches without being a complete proof.
+
+Two ways to get a PostgresConnection: build_postgres_connection() opens
+one fresh connection per call (used by tests and by backend/db.py's
+non-pooled fallback), and pooled_connection() checks one out of a
+process-wide psycopg_pool.ConnectionPool instead -- see backend/deps.py,
+which is what backend/routes.py actually uses.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from psycopg_pool import ConnectionPool
 
 # Same four tables as backend/db.py's SCHEMA, Postgres-flavored. The only
 # type that actually differs is DOUBLE -> DOUBLE PRECISION (matches.confidence);
@@ -109,10 +121,13 @@ def translate_placeholders(sql: str, params: list[Any] | None) -> tuple[str, lis
 
 
 class PostgresConnection:
-    def __init__(self, dsn: str):
-        import psycopg
+    """Wraps an already-open psycopg connection -- either a fresh one
+    (build_postgres_connection) or one checked out of a pool
+    (pooled_connection). The wrapper itself doesn't care which; both give
+    it a real psycopg connection with autocommit=True already set."""
 
-        self._conn = psycopg.connect(dsn, autocommit=True)
+    def __init__(self, psycopg_conn: Any):
+        self._conn = psycopg_conn
 
     def execute(self, sql: str, params: list[Any] | None = None) -> Any:
         translated, params = translate_placeholders(sql, params)
@@ -122,6 +137,50 @@ class PostgresConnection:
 
 
 def build_postgres_connection(database_url: str) -> PostgresConnection:
-    conn = PostgresConnection(database_url)
+    """One fresh connection, not pooled -- used by tests and by
+    backend/db.py's get_connection() when nothing has requested a pool."""
+    import psycopg
+
+    conn = PostgresConnection(psycopg.connect(database_url, autocommit=True))
     conn.execute(PG_SCHEMA)
     return conn
+
+
+_POOLS: dict[str, ConnectionPool] = {}
+
+
+def _get_pool(database_url: str) -> ConnectionPool:
+    # One pool per distinct database_url, created once per process and
+    # reused for the process's lifetime -- not per-request, which would
+    # defeat the point of pooling.
+    pool = _POOLS.get(database_url)
+    if pool is not None:
+        return pool
+
+    from psycopg_pool import ConnectionPool
+
+    pool = ConnectionPool(
+        database_url,
+        min_size=1,
+        max_size=10,
+        kwargs={"autocommit": True},
+        open=True,  # explicit: psycopg_pool 3.3 warns that the implicit default will flip to False
+    )
+    pool.wait()  # fail fast on a bad DATABASE_URL rather than on the first request
+    with pool.connection() as conn:
+        PostgresConnection(conn).execute(PG_SCHEMA)
+    _POOLS[database_url] = pool
+    return pool
+
+
+@contextmanager
+def pooled_connection(database_url: str) -> Iterator[PostgresConnection]:
+    """Checks a connection out of the process-wide pool for database_url,
+    wraps it, and returns it to the pool when the caller's `with` block
+    exits -- normally or via an exception. psycopg_pool resets a
+    connection on return (rolling back any open transaction), so a
+    caller that raised mid-transaction (e.g. backend/db.py's save_run on
+    a ROLLBACK path) can't leave the next checkout in a broken state."""
+    pool = _get_pool(database_url)
+    with pool.connection() as conn:
+        yield PostgresConnection(conn)

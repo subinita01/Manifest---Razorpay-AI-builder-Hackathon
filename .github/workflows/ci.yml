@@ -40,16 +40,16 @@ jobs:
       - name: Format check (black)
         run: black --check .
 
-      - name: Tests with coverage (core/ must stay >= 85%)
-        run: pytest --cov=core --cov-report=term-missing --cov-fail-under=85
+      - name: Tests with coverage (core/ and backend/ combined must stay >= 85%)
+        run: pytest --cov=core --cov=backend --cov-report=term-missing --cov-fail-under=85
 
-      - name: Postgres integration tests (backend/db_postgres.py)
+      - name: Postgres integration tests (backend/db_postgres.py, backend/deps.py pooling)
         # DATABASE_URL is scoped to this step only, not the job -- the step
         # above must keep exercising the DuckDB path exactly as before,
         # with zero risk of a leaked env var silently switching what it tests.
         env:
           DATABASE_URL: postgresql://manifest:manifest@localhost:5432/manifest
-        run: pytest tests/test_db_postgres.py -v
+        run: pytest tests/test_db_postgres.py tests/test_deps.py -v
 
       - name: Dependency vulnerability audit
         run: pip-audit -r requirements.txt
