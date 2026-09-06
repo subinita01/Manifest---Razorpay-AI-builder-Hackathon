@@ -182,3 +182,48 @@ def test_find_run_by_idempotency_key_against_real_postgres():
     )
     assert find_run_by_idempotency_key(conn, "pg-idempotency-key") == "pg_run_idempotency"
     assert find_run_by_idempotency_key(conn, "no-such-key") is None
+
+
+class _FlakyConnection:
+    """Same fault-injection wrapper as tests/test_db.py -- duplicated
+    rather than imported, matching this file's existing pattern of
+    keeping its own fixtures self-contained rather than sharing state
+    with the DuckDB test file."""
+
+    def __init__(self, real_conn, fail_on_call: int):
+        self._real = real_conn
+        self._call_count = 0
+        self._fail_on_call = fail_on_call
+
+    def execute(self, sql, params=None):
+        self._call_count += 1
+        if self._call_count == self._fail_on_call:
+            raise RuntimeError(f"simulated crash on execute() call #{self._fail_on_call}")
+        return self._real.execute(sql, params)
+
+
+@pytest.mark.skipif(_SKIP, reason=_SKIP_REASON)
+def test_save_run_rolls_back_completely_on_a_mid_write_failure_against_real_postgres():
+    """Same regression as tests/test_db.py's DuckDB version, proving the
+    BEGIN/COMMIT/ROLLBACK in save_run also works against a real psycopg
+    connection in autocommit=True mode, not just DuckDB."""
+    conn = build_postgres_connection(_DATABASE_URL)
+    flaky = _FlakyConnection(conn, fail_on_call=4)
+
+    try:
+        save_run(
+            flaky,
+            _manifest("pg_run_rollback"),
+            _result(),
+            dataset_id="demo",
+            use_llm=False,
+            fuzzy_threshold=Decimal("0.90"),
+            idempotency_key="pg-rollback-key",
+        )
+        raise AssertionError("expected save_run to propagate the simulated failure")
+    except RuntimeError as exc:
+        assert "simulated crash" in str(exc)
+
+    assert db_get_run(conn, "pg_run_rollback") is None
+    assert get_exceptions(conn, "pg_run_rollback") == []
+    assert get_bridge_utrs(conn, "pg_run_rollback") == []

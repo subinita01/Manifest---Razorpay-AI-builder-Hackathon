@@ -126,92 +126,114 @@ def save_run(
     fuzzy_threshold: Decimal,
     idempotency_key: str,
 ) -> None:
-    conn.execute(
-        "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            manifest.run_id,
-            dataset_id,
-            manifest.seed,
-            manifest.git_sha,
-            manifest.config_hash,
-            manifest.model_string,
-            json.dumps(manifest.library_versions),
-            manifest.created_at,
-            use_llm,
-            fuzzy_threshold,
-            idempotency_key,
-            result.total_input_rows,
-            result.matched_row_count,
-            result.needs_review_row_count,
-            result.exception_row_count,
-        ],
-    )
+    """Writes the run, its matches, exceptions, and bridges as one atomic
+    transaction. Without this, a crash partway through (a serialization
+    error on a malformed detail dict, a dropped Postgres connection, a full
+    disk) used to leave a run row claiming e.g. exception_row_count=269
+    with only some of those 269 exception rows actually written -- a
+    silent, partial persistence failure that directly contradicts CLAUDE.md
+    rule 6 (nothing silently dropped). BEGIN/COMMIT/ROLLBACK are plain SQL
+    here rather than a DBConnection method, verified live against both
+    backends: DuckDB honors them directly, and psycopg honors an explicit
+    BEGIN even with autocommit=True at the connection level -- confirmed
+    with fresh cursor objects per statement, matching how
+    PostgresConnection.execute() actually calls it."""
+    conn.execute("BEGIN")
+    try:
+        conn.execute(
+            "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                manifest.run_id,
+                dataset_id,
+                manifest.seed,
+                manifest.git_sha,
+                manifest.config_hash,
+                manifest.model_string,
+                json.dumps(manifest.library_versions),
+                manifest.created_at,
+                use_llm,
+                fuzzy_threshold,
+                idempotency_key,
+                result.total_input_rows,
+                result.matched_row_count,
+                result.needs_review_row_count,
+                result.exception_row_count,
+            ],
+        )
 
-    for bucket, matches in (("matched", result.matched), ("needs_review", result.needs_review)):
-        for m in matches:
+        for bucket, matches in (
+            ("matched", result.matched),
+            ("needs_review", result.needs_review),
+        ):
+            for m in matches:
+                conn.execute(
+                    "INSERT INTO matches VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        manifest.run_id,
+                        m.match_id,
+                        bucket,
+                        m.stage_name,
+                        m.bank_row_id,
+                        m.settlement_row_id,
+                        m.ledger_row_id,
+                        m.confidence,
+                        json.dumps(m.detail, default=str),
+                    ],
+                )
+
+        for e in result.exceptions:
             conn.execute(
-                "INSERT INTO matches VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO exceptions VALUES (?, ?, ?, ?, ?, ?, ?)",
                 [
                     manifest.run_id,
-                    m.match_id,
-                    bucket,
-                    m.stage_name,
-                    m.bank_row_id,
-                    m.settlement_row_id,
-                    m.ledger_row_id,
-                    m.confidence,
-                    json.dumps(m.detail, default=str),
+                    e.exception_id,
+                    e.taxonomy_code,
+                    e.severity,
+                    json.dumps(e.row_ids),
+                    e.amount_impact,
+                    json.dumps(e.detail, default=str),
                 ],
             )
 
-    for e in result.exceptions:
-        conn.execute(
-            "INSERT INTO exceptions VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [
-                manifest.run_id,
-                e.exception_id,
-                e.taxonomy_code,
-                e.severity,
-                json.dumps(e.row_ids),
-                e.amount_impact,
-                json.dumps(e.detail, default=str),
-            ],
-        )
-
-    for utr, bridge in result.bridges.items():
-        steps = [
-            {
-                "label": s.label,
-                "amount": str(s.amount),
-                "running_total": str(s.running_total),
-                "constituent_row_ids": s.constituent_row_ids,
-            }
-            for s in bridge.steps
-        ]
-        attribution = (
-            {"rule": bridge.attribution.rule, "detail": bridge.attribution.detail}
-            if bridge.attribution
-            else None
-        )
-        rate_variance = (
-            {"rule": bridge.rate_variance.rule, "detail": bridge.rate_variance.detail}
-            if bridge.rate_variance
-            else None
-        )
-        conn.execute(
-            "INSERT INTO bridges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                manifest.run_id,
-                utr,
-                json.dumps(steps),
-                bridge.expected_net,
-                bridge.bank_credit,
-                bridge.residual,
-                bridge.closed,
-                json.dumps(attribution),
-                json.dumps(rate_variance),
-            ],
-        )
+        for utr, bridge in result.bridges.items():
+            steps = [
+                {
+                    "label": s.label,
+                    "amount": str(s.amount),
+                    "running_total": str(s.running_total),
+                    "constituent_row_ids": s.constituent_row_ids,
+                }
+                for s in bridge.steps
+            ]
+            attribution = (
+                {"rule": bridge.attribution.rule, "detail": bridge.attribution.detail}
+                if bridge.attribution
+                else None
+            )
+            rate_variance = (
+                {"rule": bridge.rate_variance.rule, "detail": bridge.rate_variance.detail}
+                if bridge.rate_variance
+                else None
+            )
+            conn.execute(
+                "INSERT INTO bridges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    manifest.run_id,
+                    utr,
+                    json.dumps(steps),
+                    bridge.expected_net,
+                    bridge.bank_credit,
+                    bridge.residual,
+                    bridge.closed,
+                    json.dumps(attribution),
+                    json.dumps(rate_variance),
+                ],
+            )
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    else:
+        conn.execute("COMMIT")
 
 
 def get_run(conn: DBConnection, run_id: str) -> dict[str, Any] | None:

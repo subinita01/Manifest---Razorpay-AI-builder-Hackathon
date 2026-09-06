@@ -143,3 +143,57 @@ def test_money_columns_are_decimal_not_real(tmp_path: Path):
     column_types = {row[0]: row[1] for row in conn.execute("DESCRIBE exceptions").fetchall()}
     assert "DECIMAL" in column_types["amount_impact"]
     assert column_types["amount_impact"] != "REAL"
+
+
+class _FlakyConnection:
+    """Wraps a real connection and raises on its Nth .execute() call --
+    simulates a crash partway through save_run's multi-statement write
+    (a serialization error, a dropped connection, a full disk)."""
+
+    def __init__(self, real_conn, fail_on_call: int):
+        self._real = real_conn
+        self._call_count = 0
+        self._fail_on_call = fail_on_call
+
+    def execute(self, sql, params=None):
+        self._call_count += 1
+        if self._call_count == self._fail_on_call:
+            raise RuntimeError(f"simulated crash on execute() call #{self._fail_on_call}")
+        return self._real.execute(sql, params)
+
+
+def test_save_run_rolls_back_completely_on_a_mid_write_failure(tmp_path: Path):
+    """Regression test for a real gap: without an explicit transaction,
+    a crash between the runs INSERT and the exceptions INSERT used to
+    leave a runs row claiming exception_row_count=1 with zero actual rows
+    in the exceptions table -- a silent partial write directly
+    contradicting CLAUDE.md rule 6 (nothing silently dropped). Call
+    sequence inside save_run is: BEGIN(1), INSERT runs(2), INSERT
+    matches(3), INSERT exceptions(4) -- failing on call 4 proves the
+    already-applied runs and matches inserts get rolled back too, not
+    just that the exceptions insert itself never happens."""
+    conn = get_connection(tmp_path / "test.duckdb")
+    flaky = _FlakyConnection(conn, fail_on_call=4)
+
+    try:
+        save_run(
+            flaky,
+            _manifest(),
+            _result(),
+            dataset_id="demo",
+            use_llm=False,
+            fuzzy_threshold=Decimal("0.90"),
+            idempotency_key="key1",
+        )
+        raise AssertionError("expected save_run to propagate the simulated failure")
+    except RuntimeError as exc:
+        assert "simulated crash" in str(exc)
+
+    # Query the real, underlying connection directly -- nothing from the
+    # failed write should have survived in any of the four tables.
+    assert get_run(conn, "run_1") is None
+    assert get_exceptions(conn, "run_1") == []
+    assert (
+        conn.execute("SELECT COUNT(*) FROM matches WHERE run_id = ?", ["run_1"]).fetchone()[0] == 0
+    )
+    assert get_bridge_utrs(conn, "run_1") == []
