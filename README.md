@@ -114,12 +114,12 @@ Four commands, no API key required -- `use_llm` defaults to off, and even switch
 cp .env.example .env             # sets MANIFEST_API_KEYS=dev-local-key-change-me
 make serve                       # uvicorn backend.main:app --reload, http://localhost:8000
 # or, containerized:
-make docker-up                   # docker compose up --build -- api on :8000, demo-ui on :8501
+make docker-up                   # docker compose up --build -- postgres, api on :8000, demo-ui on :8501
 curl -H "X-API-Key: dev-local-key-change-me" -X POST localhost:8000/reconcile \
   -H "Content-Type: application/json" -d '{"dataset_id": "demo"}'
 ```
 
-`/healthz` never requires a key (a load balancer probe shouldn't need one) and actually checks the database connection rather than always returning 200. One deliberate, documented gap: DuckDB (`backend/db.py`) is embedded and effectively single-writer, which is fine for this demo but not for multiple concurrent `uvicorn` workers -- migrating to Postgres is planned follow-up work, not an oversight (see `SECURITY.md`'s Non-goals).
+`/healthz` never requires a key (a load balancer probe shouldn't need one) and actually checks the database connection rather than always returning 200. By default `backend/db.py` uses DuckDB, correct but effectively single-writer -- fine for the Streamlit demo, not for multiple concurrent `uvicorn` workers. Setting `DATABASE_URL=postgresql://...` switches it to a real Postgres connection instead (`backend/db_postgres.py`); `make docker-up` does this automatically for the `api` service against its own `postgres` container, no extra setup needed. One remaining, deliberate gap: each call still opens a fresh connection rather than pooling one -- see `SECURITY.md`'s Non-goals.
 
 ## Try the upload flow with your own CSVs
 

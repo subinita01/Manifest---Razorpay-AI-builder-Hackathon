@@ -1,14 +1,36 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: manifest
+      POSTGRES_PASSWORD: manifest
+      POSTGRES_DB: manifest
+    volumes:
+      - manifest-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U manifest"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
   api:
     build: .
     ports:
       - "8000:8000"
+    environment:
+      # Only set here, inside compose -- .env.example ships DATABASE_URL
+      # empty on purpose, since DuckDB is the correct default for anyone
+      # not running the full compose stack (make serve, plain `docker run`).
+      DATABASE_URL: postgresql://manifest:manifest@postgres:5432/manifest
     env_file:
       # required: false -- .env is gitignored and optional; every setting
       # in backend/config.py and llm/adapter.py has a working default
       # (NullAdapter, no API auth key set) without it.
       - path: .env
         required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - manifest-data:/app/data
 
@@ -28,3 +50,4 @@ services:
 
 volumes:
   manifest-data:
+  manifest-postgres-data:

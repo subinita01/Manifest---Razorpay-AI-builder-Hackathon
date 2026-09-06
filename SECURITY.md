@@ -37,11 +37,18 @@ the control exists. `pytest tests/test_security.py` runs the attack suite;
   not Vault/AWS Secrets Manager/etc. `core/` still never reads env vars for
   secrets at all (CLAUDE.md rule 2); the LLM provider keys are unchanged,
   still read by `llm/adapter.py`'s own precedence chain.
-- **A production-grade database**: DuckDB (`backend/db.py`) is embedded and
-  effectively single-writer -- correct and well-tested for this demo's
-  single-process usage, but not safe under multiple concurrent `uvicorn`
-  workers writing to the same file. Migrating to Postgres is real, planned
-  follow-up work, not an oversight.
+- **Connection pooling**: DuckDB (`backend/db.py`'s default, no `DATABASE_URL`)
+  is embedded and effectively single-writer -- correct for the Streamlit
+  demo's single-process usage, but not safe under multiple concurrent
+  `uvicorn` workers writing to the same file. Postgres is now a real,
+  tested alternative (`DATABASE_URL=postgresql://...`, `backend/db_postgres.py`,
+  `tests/test_db_postgres.py`, exercised against a live Postgres in CI) --
+  but each `get_connection()` call still opens one fresh connection rather
+  than checking one out of a pool, correct and durable but not
+  throughput-optimized. Pooling would mean converting every route
+  handler's connection acquisition into a FastAPI `Depends()`-injected,
+  properly checked-in-and-out connection -- real, separate follow-up work,
+  not an oversight.
 
 ## Verifying this yourself
 

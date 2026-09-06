@@ -14,8 +14,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-import duckdb
-
 from backend import db
 from backend.audit_log import get_audit_logger
 from backend.security import UnsafePath, dataset_dir, validate_dataset_id
@@ -123,7 +121,7 @@ def compute_idempotency_key(
 
 
 def reconcile(
-    conn: duckdb.DuckDBPyConnection,
+    conn: db.DBConnection,
     dataset_id: str,
     use_llm: bool = False,
     fuzzy_threshold: float = 0.90,

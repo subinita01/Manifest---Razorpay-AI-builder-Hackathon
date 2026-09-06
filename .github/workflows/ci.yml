@@ -8,6 +8,20 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: manifest
+          POSTGRES_PASSWORD: manifest
+          POSTGRES_DB: manifest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U manifest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -28,6 +42,14 @@ jobs:
 
       - name: Tests with coverage (core/ must stay >= 85%)
         run: pytest --cov=core --cov-report=term-missing --cov-fail-under=85
+
+      - name: Postgres integration tests (backend/db_postgres.py)
+        # DATABASE_URL is scoped to this step only, not the job -- the step
+        # above must keep exercising the DuckDB path exactly as before,
+        # with zero risk of a leaked env var silently switching what it tests.
+        env:
+          DATABASE_URL: postgresql://manifest:manifest@localhost:5432/manifest
+        run: pytest tests/test_db_postgres.py -v
 
       - name: Dependency vulnerability audit
         run: pip-audit -r requirements.txt

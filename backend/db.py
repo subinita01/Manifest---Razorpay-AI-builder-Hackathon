@@ -1,4 +1,5 @@
-"""DuckDB persistence for pipeline runs.
+"""Persistence for pipeline runs -- DuckDB by default, or Postgres if
+DATABASE_URL is set (see get_connection() and backend/db_postgres.py).
 
 Money columns are DECIMAL(18,4), never REAL -- the same invariant
 CLAUDE.md holds core/ to. This module is backend-only (it imports
@@ -8,9 +9,10 @@ core.pipeline/core.models for typing, but core/ never imports this file).
 from __future__ import annotations
 
 import json
+import os
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import duckdb
 
@@ -18,6 +20,18 @@ from core.models import RunManifest
 from core.pipeline import RunResult
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "manifest.duckdb"
+
+
+class DBConnection(Protocol):
+    """What every query function below actually depends on -- not
+    duckdb.DuckDBPyConnection specifically. DuckDB's own .execute() happens
+    to return the connection itself (hence method chaining like
+    conn.execute(sql, params).fetchone()), and backend/db_postgres.py's
+    PostgresConnection.execute() returns a plain psycopg cursor instead --
+    both satisfy this Protocol, which is all any function here requires."""
+
+    def execute(self, sql: str, params: list[Any] | None = None) -> Any: ...
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -79,10 +93,16 @@ CREATE INDEX IF NOT EXISTS idx_bridges_run_utr ON bridges(run_id, settlement_utr
 """
 
 
-def get_connection(db_path: Path | None = None) -> duckdb.DuckDBPyConnection:
-    # Resolves DEFAULT_DB_PATH at call time, not def time, so tests can
-    # monkeypatch backend.db.DEFAULT_DB_PATH and have every no-arg caller
-    # (routes.py) pick up the patched value.
+def get_connection(db_path: Path | None = None) -> DBConnection:
+    # DATABASE_URL is also resolved at call time (os.environ.get, not a
+    # module-level constant), same reason as DEFAULT_DB_PATH below: tests
+    # monkeypatch it and every no-arg caller (routes.py) must pick that up.
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        from backend.db_postgres import build_postgres_connection
+
+        return build_postgres_connection(database_url)
+
     path = db_path if db_path is not None else DEFAULT_DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(str(path))
@@ -90,9 +110,7 @@ def get_connection(db_path: Path | None = None) -> duckdb.DuckDBPyConnection:
     return conn
 
 
-def find_run_by_idempotency_key(
-    conn: duckdb.DuckDBPyConnection, idempotency_key: str
-) -> str | None:
+def find_run_by_idempotency_key(conn: DBConnection, idempotency_key: str) -> str | None:
     row = conn.execute(
         "SELECT run_id FROM runs WHERE idempotency_key = ? LIMIT 1", [idempotency_key]
     ).fetchone()
@@ -100,7 +118,7 @@ def find_run_by_idempotency_key(
 
 
 def save_run(
-    conn: duckdb.DuckDBPyConnection,
+    conn: DBConnection,
     manifest: RunManifest,
     result: RunResult,
     dataset_id: str,
@@ -196,7 +214,7 @@ def save_run(
         )
 
 
-def get_run(conn: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any] | None:
+def get_run(conn: DBConnection, run_id: str) -> dict[str, Any] | None:
     columns = [
         "run_id",
         "dataset_id",
@@ -224,7 +242,7 @@ def get_run(conn: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any] | No
     return record
 
 
-def get_exceptions(conn: duckdb.DuckDBPyConnection, run_id: str) -> list[dict[str, Any]]:
+def get_exceptions(conn: DBConnection, run_id: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT exception_id, taxonomy_code, severity, row_ids, amount_impact, detail "
         "FROM exceptions WHERE run_id = ?",
@@ -243,7 +261,7 @@ def get_exceptions(conn: duckdb.DuckDBPyConnection, run_id: str) -> list[dict[st
     ]
 
 
-def get_bridge_utrs(conn: duckdb.DuckDBPyConnection, run_id: str) -> list[dict[str, Any]]:
+def get_bridge_utrs(conn: DBConnection, run_id: str) -> list[dict[str, Any]]:
     """Every bridge computed for a run, for populating a settlement-batch
     picker without pulling each bridge's full step/detail payload."""
     rows = conn.execute(
@@ -267,9 +285,7 @@ def get_bridge_utrs(conn: duckdb.DuckDBPyConnection, run_id: str) -> list[dict[s
     ]
 
 
-def get_bridge(
-    conn: duckdb.DuckDBPyConnection, run_id: str, settlement_utr: str
-) -> dict[str, Any] | None:
+def get_bridge(conn: DBConnection, run_id: str, settlement_utr: str) -> dict[str, Any] | None:
     row = conn.execute(
         "SELECT steps, expected_net, bank_credit, residual, closed, attribution, rate_variance "
         "FROM bridges WHERE run_id = ? AND settlement_utr = ?",
